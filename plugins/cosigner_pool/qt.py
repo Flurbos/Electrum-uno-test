@@ -23,18 +23,19 @@
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import socket
-import threading
 import time
-import xmlrpclib
+from xmlrpc.client import ServerProxy
 
-from PyQt4.QtGui import *
-from PyQt4.QtCore import *
+from PyQt5.QtGui import *
+from PyQt5.QtCore import *
+from PyQt5.QtWidgets import QPushButton
 
 from electrum import bitcoin, util
 from electrum import transaction
 from electrum.plugins import BasePlugin, hook
 from electrum.i18n import _
+from electrum.wallet import Multisig_Wallet
+from electrum.util import bh2u, bfh
 
 from electrum_gui.qt.transaction_dialog import show_transaction
 
@@ -43,8 +44,8 @@ import traceback
 
 
 PORT = 12344
-HOST = 'ecdsa.net'
-server = xmlrpclib.ServerProxy('http://%s:%d'%(HOST,PORT), allow_none=True)
+HOST = 'cosigner.electrum.org'
+server = ServerProxy('http://%s:%d'%(HOST,PORT), allow_none=True)
 
 
 class Listener(util.DaemonThread):
@@ -80,10 +81,14 @@ class Listener(util.DaemonThread):
                 if message:
                     self.received.add(keyhash)
                     self.print_error("received message for", keyhash)
-                    self.parent.obj.emit(SIGNAL("cosigner:receive"), keyhash,
-                                         message)
+                    self.parent.obj.cosigner_receive_signal.emit(
+                        keyhash, message)
             # poll every 30 seconds
             time.sleep(30)
+
+
+class QReceiveSignalObject(QObject):
+    cosigner_receive_signal = pyqtSignal(object, object)
 
 
 class Plugin(BasePlugin):
@@ -91,8 +96,8 @@ class Plugin(BasePlugin):
     def __init__(self, parent, config, name):
         BasePlugin.__init__(self, parent, config, name)
         self.listener = None
-        self.obj = QObject()
-        self.obj.connect(self.obj, SIGNAL('cosigner:receive'), self.on_receive)
+        self.obj = QReceiveSignalObject()
+        self.obj.cosigner_receive_signal.connect(self.on_receive)
         self.keys = []
         self.cosigner_list = []
 
@@ -114,7 +119,7 @@ class Plugin(BasePlugin):
 
     def update(self, window):
         wallet = window.wallet
-        if wallet.wallet_type not in ['2of2', '2of3']:
+        if type(wallet) != Multisig_Wallet:
             return
         if self.listener is None:
             self.print_error("starting listener")
@@ -126,10 +131,11 @@ class Plugin(BasePlugin):
             self.listener = None
         self.keys = []
         self.cosigner_list = []
-        for key, xpub in wallet.master_public_keys.items():
-            K = bitcoin.deserialize_xkey(xpub)[-1].encode('hex')
-            _hash = bitcoin.Hash(K).encode('hex')
-            if wallet.master_private_keys.get(key):
+        for key, keystore in wallet.keystores.items():
+            xpub = keystore.get_master_public_key()
+            K = bitcoin.deserialize_xpub(xpub)[-1]
+            _hash = bh2u(bitcoin.Hash(K))
+            if not keystore.is_watching_only():
                 self.keys.append((key, _hash, window))
             else:
                 self.cosigner_list.append((window, xpub, K, _hash))
@@ -156,21 +162,20 @@ class Plugin(BasePlugin):
             d.cosigner_send_button.hide()
 
     def cosigner_can_sign(self, tx, cosigner_xpub):
-        from electrum.transaction import x_to_xpub
+        from electrum.keystore import is_xpubkey, parse_xpubkey
         xpub_set = set([])
         for txin in tx.inputs():
             for x_pubkey in txin['x_pubkeys']:
-                xpub = x_to_xpub(x_pubkey)
-                if xpub:
+                if is_xpubkey(x_pubkey):
+                    xpub, s = parse_xpubkey(x_pubkey)
                     xpub_set.add(xpub)
-
         return cosigner_xpub in xpub_set
 
     def do_send(self, tx):
         for window, xpub, K, _hash in self.cosigner_list:
             if not self.cosigner_can_sign(tx, xpub):
                 continue
-            message = bitcoin.encrypt_message(tx.raw, K)
+            message = bitcoin.encrypt_message(bfh(tx.raw), bh2u(K)).decode('ascii')
             try:
                 server.put(_hash, message)
             except Exception as e:
@@ -189,7 +194,7 @@ class Plugin(BasePlugin):
             return
 
         wallet = window.wallet
-        if wallet.use_encryption:
+        if wallet.has_password():
             password = window.password_dialog('An encrypted transaction was retrieved from cosigning pool.\nPlease enter your password to decrypt it.')
             if not password:
                 return
@@ -198,13 +203,13 @@ class Plugin(BasePlugin):
             if not window.question(_("An encrypted transaction was retrieved from cosigning pool.\nDo you want to open it now?")):
                 return
 
-        xprv = wallet.get_master_private_key(key, password)
+        xprv = wallet.keystore.get_master_private_key(password)
         if not xprv:
             return
         try:
-            k = bitcoin.deserialize_xkey(xprv)[-1].encode('hex')
-            EC = bitcoin.EC_KEY(k.decode('hex'))
-            message = EC.decrypt_message(message)
+            k = bh2u(bitcoin.deserialize_xprv(xprv)[-1])
+            EC = bitcoin.EC_KEY(bfh(k))
+            message = bh2u(EC.decrypt_message(message))
         except Exception as e:
             traceback.print_exc(file=sys.stdout)
             window.show_message(str(e))

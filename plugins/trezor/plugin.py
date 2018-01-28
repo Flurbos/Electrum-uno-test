@@ -1,64 +1,55 @@
-import base64
-import re
 import threading
 
-from binascii import unhexlify
-from functools import partial
+from binascii import hexlify, unhexlify
 
-from electrum.account import BIP32_Account
-from electrum.bitcoin import (bc_address_to_hash_160, xpub_from_pubkey,
-                              public_key_to_bc_address, EncodeBase58Check,
-                              TYPE_ADDRESS)
+from electrum.util import bfh, bh2u
+from electrum.bitcoin import (b58_address_to_hash160, xpub_from_pubkey,
+                              TYPE_ADDRESS, TYPE_SCRIPT, NetworkConstants)
 from electrum.i18n import _
-from electrum.plugins import BasePlugin, hook
-from electrum.transaction import (deserialize, is_extended_pubkey,
-                                  Transaction, x_to_xpub)
-from ..hw_wallet import BIP44_HW_Wallet, HW_PluginBase
+from electrum.plugins import BasePlugin
+from electrum.transaction import deserialize
+from electrum.keystore import Hardware_KeyStore, is_xpubkey, parse_xpubkey
+
+from ..hw_wallet import HW_PluginBase
 
 
 # TREZOR initialization methods
 TIM_NEW, TIM_RECOVER, TIM_MNEMONIC, TIM_PRIVKEY = range(0, 4)
 
-class TrezorCompatibleWallet(BIP44_HW_Wallet):
+# script "generation"
+SCRIPT_GEN_LEGACY, SCRIPT_GEN_P2SH_SEGWIT, SCRIPT_GEN_NATIVE_SEGWIT = range(0, 3)
 
-    def get_public_key(self, bip32_path):
-        client = self.get_client()
-        address_n = client.expand_path(bip32_path)
-        creating = self.next_account_number() == 0
-        node = client.get_public_node(address_n, creating).node
-        xpub = ("0488B21E".decode('hex') + chr(node.depth)
-                + self.i4b(node.fingerprint) + self.i4b(node.child_num)
-                + node.chain_code + node.public_key)
-        return EncodeBase58Check(xpub)
+class TrezorCompatibleKeyStore(Hardware_KeyStore):
 
-    def decrypt_message(self, pubkey, message, password):
-        raise RuntimeError(_('Electrum and %s encryption and decryption are currently incompatible') % self.device)
-        address = public_key_to_bc_address(pubkey.decode('hex'))
+    def get_derivation(self):
+        return self.derivation
+
+    def get_script_gen(self):
+        def is_p2sh_segwit():
+            return self.derivation.startswith("m/49'/")
+
+        def is_native_segwit():
+            return self.derivation.startswith("m/84'/")
+
+        if is_native_segwit():
+            return SCRIPT_GEN_NATIVE_SEGWIT
+        elif is_p2sh_segwit():
+            return SCRIPT_GEN_P2SH_SEGWIT
+        else:
+            return SCRIPT_GEN_LEGACY
+
+    def get_client(self, force_pair=True):
+        return self.plugin.get_client(self, force_pair)
+
+    def decrypt_message(self, sequence, message, password):
+        raise RuntimeError(_('Encryption and decryption are not implemented by %s') % self.device)
+
+    def sign_message(self, sequence, message, password):
         client = self.get_client()
-        address_path = self.address_id(address)
+        address_path = self.get_derivation() + "/%d/%d"%sequence
         address_n = client.expand_path(address_path)
-        payload = base64.b64decode(message)
-        nonce, message, msg_hmac = payload[:33], payload[33:-8], payload[-8:]
-        result = client.decrypt_message(address_n, nonce, message, msg_hmac)
-        return result.message
-
-    def sign_message(self, address, message, password):
-        client = self.get_client()
-        address_path = self.address_id(address)
-        address_n = client.expand_path(address_path)
-        msg_sig = client.sign_message('Bitcoin', address_n, message)
+        msg_sig = client.sign_message(self.plugin.get_coin_name(), address_n, message)
         return msg_sig.signature
-
-    def get_input_tx(self, tx_hash):
-        # First look up an input transaction in the wallet where it
-        # will likely be.  If co-signing a transaction it may not have
-        # all the input txs, in which case we ask the network.
-        tx = self.transactions.get(tx_hash)
-        if not tx:
-            request = ('blockchain.transaction.get', [tx_hash])
-            # FIXME: what if offline?
-            tx = Transaction(self.network.synchronous_get(request))
-        return tx
 
     def sign_transaction(self, tx, password):
         if tx.is_complete():
@@ -68,16 +59,15 @@ class TrezorCompatibleWallet(BIP44_HW_Wallet):
         # path of the xpubs that are involved
         xpub_path = {}
         for txin in tx.inputs():
+            pubkeys, x_pubkeys = tx.get_sorted_pubkeys(txin)
             tx_hash = txin['prevout_hash']
-            prev_tx[tx_hash] = self.get_input_tx(tx_hash)
-            for x_pubkey in txin['x_pubkeys']:
-                if not is_extended_pubkey(x_pubkey):
+            prev_tx[tx_hash] = txin['prev_tx']
+            for x_pubkey in x_pubkeys:
+                if not is_xpubkey(x_pubkey):
                     continue
-                xpub = x_to_xpub(x_pubkey)
-                for k, v in self.master_public_keys.items():
-                    if v == xpub:
-                        acc_id = re.match("x/(\d+)'", k).group(1)
-                        xpub_path[xpub] = self.account_derivation(acc_id)
+                xpub, s = parse_xpubkey(x_pubkey)
+                if xpub == self.get_master_public_key():
+                    xpub_path[xpub] = self.get_derivation()
 
         self.plugin.sign_transaction(self, tx, prev_tx, xpub_path)
 
@@ -98,18 +88,32 @@ class TrezorCompatiblePlugin(HW_PluginBase):
         if self.libraries_available:
             self.device_manager().register_devices(self.DEVICE_IDS)
 
-    def create_client(self, device, handler):
-        if device.interface_number == 1:
-            pair = [None, device.path]
-        else:
-            pair = [device.path, None]
-
+    def _try_hid(self, device):
+        self.print_error("Trying to connect over USB...")
         try:
-            transport = self.HidTransport(pair)
+            return self.hid_transport(device)
         except BaseException as e:
-            # We were probably just disconnected; never mind
+            # see fdb810ba622dc7dbe1259cbafb5b28e19d2ab114
+            # raise
             self.print_error("cannot connect at", device.path, str(e))
             return None
+
+    def _try_bridge(self, device):
+        self.print_error("Trying to connect over Trezor Bridge...")
+        try:
+            return self.bridge_transport({'path': hexlify(device.path)})
+        except BaseException as e:
+            self.print_error("cannot connect to bridge", str(e))
+            return None
+
+    def create_client(self, device, handler):
+        # disable bridge because it seems to never returns if keepkey is plugged
+        #transport = self._try_bridge(device) or self._try_hid(device)
+        transport = self._try_hid(device)
+        if not transport:
+            self.print_error("cannot connect to device")
+            return
+
         self.print_error("connected to device at", device.path)
 
         client = self.client_class(transport, handler, self)
@@ -125,23 +129,26 @@ class TrezorCompatiblePlugin(HW_PluginBase):
             msg = (_('Outdated %s firmware for device labelled %s. Please '
                      'download the updated firmware from %s') %
                    (self.device, client.label(), self.firmware_URL))
+            self.print_error(msg)
             handler.show_error(msg)
             return None
 
         return client
 
-    def get_client(self, wallet, force_pair=True):
-        # All client interaction should not be in the main GUI thread
-        assert self.main_thread != threading.current_thread()
-
+    def get_client(self, keystore, force_pair=True):
         devmgr = self.device_manager()
-        client = devmgr.client_for_wallet(self, wallet, force_pair)
+        handler = keystore.handler
+        with devmgr.hid_lock:
+            client = devmgr.client_for_keystore(self, handler, keystore, force_pair)
+        # returns the client for a given keystore. can use xpub
         if client:
             client.used()
-
         return client
 
-    def initialize_device(self, wallet):
+    def get_coin_name(self):
+        return "Testnet" if NetworkConstants.TESTNET else "Bitcoin"
+
+    def initialize_device(self, device_id, wizard, handler):
         # Initialization method
         msg = _("Choose how you want to initialize your %s.\n\n"
                 "The first two methods are secure as no secret information "
@@ -151,22 +158,29 @@ class TrezorCompatiblePlugin(HW_PluginBase):
                 "only do those on a computer you know to be trustworthy "
                 "and free of malware."
         ) % (self.device, self.device)
-
-        methods = [
+        choices = [
             # Must be short as QT doesn't word-wrap radio button text
-            _("Let the device generate a completely new seed randomly"),
-            _("Recover from a seed you have previously written down"),
-            _("Upload a BIP39 mnemonic to generate the seed"),
-            _("Upload a master private key")
+            (TIM_NEW, _("Let the device generate a completely new seed randomly")),
+            (TIM_RECOVER, _("Recover from a seed you have previously written down")),
+            (TIM_MNEMONIC, _("Upload a BIP39 mnemonic to generate the seed")),
+            (TIM_PRIVKEY, _("Upload a master private key"))
         ]
+        def f(method):
+            import threading
+            settings = self.request_trezor_init_settings(wizard, method, self.device)
+            t = threading.Thread(target = self._initialize_device, args=(settings, method, device_id, wizard, handler))
+            t.setDaemon(True)
+            t.start()
+            wizard.loop.exec_()
+        wizard.choice_dialog(title=_('Initialize Device'), message=msg, choices=choices, run_next=f)
 
-        method = wallet.handler.query_choice(msg, methods)
-        (item, label, pin_protection, passphrase_protection) \
-            = wallet.handler.request_trezor_init_settings(method, self.device)
+    def _initialize_device(self, settings, method, device_id, wizard, handler):
+        item, label, pin_protection, passphrase_protection = settings
 
-        if method == TIM_RECOVER and self.device == 'TREZOR':
-            # Warn user about firmware lameness
-            wallet.handler.show_error(_(
+        if method == TIM_RECOVER:
+            # FIXME the PIN prompt will appear over this message
+            # which makes this unreadable
+            handler.show_error(_(
                 "You will be asked to enter 24 words regardless of your "
                 "seed's actual length.  If you enter a word incorrectly or "
                 "misspell it, you cannot change it or go back - you will need "
@@ -174,70 +188,87 @@ class TrezorCompatiblePlugin(HW_PluginBase):
                 "the words carefully!"))
 
         language = 'english'
+        devmgr = self.device_manager()
+        client = devmgr.client_by_id(device_id)
 
-        def initialize_method():
-            client = self.get_client(wallet)
-
-            if method == TIM_NEW:
-                strength = 64 * (item + 2)  # 128, 192 or 256
-                client.reset_device(True, strength, passphrase_protection,
-                                    pin_protection, label, language)
-            elif method == TIM_RECOVER:
-                word_count = 6 * (item + 2)  # 12, 18 or 24
-                client.step = 0
-                client.recovery_device(word_count, passphrase_protection,
+        if method == TIM_NEW:
+            strength = 64 * (item + 2)  # 128, 192 or 256
+            u2f_counter = 0
+            skip_backup = False
+            client.reset_device(True, strength, passphrase_protection,
+                                pin_protection, label, language,
+                                u2f_counter, skip_backup)
+        elif method == TIM_RECOVER:
+            word_count = 6 * (item + 2)  # 12, 18 or 24
+            client.step = 0
+            client.recovery_device(word_count, passphrase_protection,
                                        pin_protection, label, language)
-            elif method == TIM_MNEMONIC:
-                pin = pin_protection  # It's the pin, not a boolean
-                client.load_device_by_mnemonic(str(item), pin,
-                                               passphrase_protection,
-                                               label, language)
-            else:
-                pin = pin_protection  # It's the pin, not a boolean
-                client.load_device_by_xprv(item, pin, passphrase_protection,
+        elif method == TIM_MNEMONIC:
+            pin = pin_protection  # It's the pin, not a boolean
+            client.load_device_by_mnemonic(str(item), pin,
+                                           passphrase_protection,
                                            label, language)
-            # After successful initialization create accounts
-            wallet.create_hd_account(None)
+        else:
+            pin = pin_protection  # It's the pin, not a boolean
+            client.load_device_by_xprv(item, pin, passphrase_protection,
+                                       label, language)
+        wizard.loop.exit(0)
 
-        return initialize_method
-
-    def setup_device(self, wallet, on_done, on_error):
+    def setup_device(self, device_info, wizard):
         '''Called when creating a new wallet.  Select the device to use.  If
         the device is uninitialized, go through the intialization
-        process.  Then create the wallet accounts.'''
+        process.'''
         devmgr = self.device_manager()
-        device_info = devmgr.select_device(wallet, self)
-        devmgr.pair_wallet(wallet, device_info.device.id_)
-        if device_info.initialized:
-            task = partial(wallet.create_hd_account, None)
-        else:
-            task = self.initialize_device(wallet)
-        wallet.thread.add(task, on_done=on_done, on_error=on_error)
+        device_id = device_info.device.id_
+        client = devmgr.client_by_id(device_id)
+        # fixme: we should use: client.handler = wizard
+        client.handler = self.create_handler(wizard)
+        if not device_info.initialized:
+            self.initialize_device(device_id, wizard, client.handler)
+        client.get_xpub('m', 'standard')
+        client.used()
 
-    def sign_transaction(self, wallet, tx, prev_tx, xpub_path):
+    def get_xpub(self, device_id, derivation, xtype, wizard):
+        devmgr = self.device_manager()
+        client = devmgr.client_by_id(device_id)
+        client.handler = wizard
+        xpub = client.get_xpub(derivation, xtype)
+        client.used()
+        return xpub
+
+    def sign_transaction(self, keystore, tx, prev_tx, xpub_path):
         self.prev_tx = prev_tx
         self.xpub_path = xpub_path
-        client = self.get_client(wallet)
-        inputs = self.tx_inputs(tx, True)
-        outputs = self.tx_outputs(wallet, tx)
-        signed_tx = client.sign_tx('Bitcoin', inputs, outputs)[1]
-        raw = signed_tx.encode('hex')
+        client = self.get_client(keystore)
+        inputs = self.tx_inputs(tx, True, keystore.get_script_gen())
+        outputs = self.tx_outputs(keystore.get_derivation(), tx, keystore.get_script_gen())
+        signed_tx = client.sign_tx(self.get_coin_name(), inputs, outputs, lock_time=tx.locktime)[1]
+        raw = bh2u(signed_tx)
         tx.update_signatures(raw)
 
     def show_address(self, wallet, address):
-        client = self.get_client(wallet)
+        client = self.get_client(wallet.keystore)
         if not client.atleast_version(1, 3):
-            wallet.handler.show_error(_("Your device firmware is too old"))
+            wallet.keystore.handler.show_error(_("Your device firmware is too old"))
             return
-        address_path = wallet.address_id(address)
+        change, index = wallet.get_address_index(address)
+        derivation = wallet.keystore.derivation
+        address_path = "%s/%d/%d"%(derivation, change, index)
         address_n = client.expand_path(address_path)
-        client.get_address('Bitcoin', address_n, True)
+        script_gen = wallet.keystore.get_script_gen()
+        if script_gen == SCRIPT_GEN_NATIVE_SEGWIT:
+            script_type = self.types.InputScriptType.SPENDWITNESS
+        elif script_gen == SCRIPT_GEN_P2SH_SEGWIT:
+            script_type = self.types.InputScriptType.SPENDP2SHWITNESS
+        else:
+            script_type = self.types.InputScriptType.SPENDADDRESS
+        client.get_address(self.get_coin_name(), address_n, True, script_type=script_type)
 
-    def tx_inputs(self, tx, for_sig=False):
+    def tx_inputs(self, tx, for_sig=False, script_gen=SCRIPT_GEN_LEGACY):
         inputs = []
         for txin in tx.inputs():
             txinputtype = self.types.TxInputType()
-            if txin.get('is_coinbase'):
+            if txin['type'] == 'coinbase':
                 prev_hash = "\0"*32
                 prev_index = 0xffffffff  # signed int -1
             else:
@@ -245,74 +276,118 @@ class TrezorCompatiblePlugin(HW_PluginBase):
                     x_pubkeys = txin['x_pubkeys']
                     if len(x_pubkeys) == 1:
                         x_pubkey = x_pubkeys[0]
-                        xpub, s = BIP32_Account.parse_xpubkey(x_pubkey)
+                        xpub, s = parse_xpubkey(x_pubkey)
                         xpub_n = self.client_class.expand_path(self.xpub_path[xpub])
-                        txinputtype.address_n.extend(xpub_n + s)
+                        txinputtype._extend_address_n(xpub_n + s)
+                        if script_gen == SCRIPT_GEN_NATIVE_SEGWIT:
+                            txinputtype.script_type = self.types.InputScriptType.SPENDWITNESS
+                        elif script_gen == SCRIPT_GEN_P2SH_SEGWIT:
+                            txinputtype.script_type = self.types.InputScriptType.SPENDP2SHWITNESS
+                        else:
+                            txinputtype.script_type = self.types.InputScriptType.SPENDADDRESS
                     else:
                         def f(x_pubkey):
-                            if is_extended_pubkey(x_pubkey):
-                                xpub, s = BIP32_Account.parse_xpubkey(x_pubkey)
+                            if is_xpubkey(x_pubkey):
+                                xpub, s = parse_xpubkey(x_pubkey)
                             else:
-                                xpub = xpub_from_pubkey(x_pubkey.decode('hex'))
+                                xpub = xpub_from_pubkey(0, bfh(x_pubkey))
                                 s = []
                             node = self.ckd_public.deserialize(xpub)
                             return self.types.HDNodePathType(node=node, address_n=s)
-                        pubkeys = map(f, x_pubkeys)
+                        pubkeys = list(map(f, x_pubkeys))
                         multisig = self.types.MultisigRedeemScriptType(
                             pubkeys=pubkeys,
-                            signatures=map(lambda x: x.decode('hex') if x else '', txin.get('signatures')),
+                            signatures=list(map(lambda x: bfh(x)[:-1] if x else b'', txin.get('signatures'))),
                             m=txin.get('num_sig'),
                         )
+                        if script_gen == SCRIPT_GEN_NATIVE_SEGWIT:
+                            script_type = self.types.InputScriptType.SPENDWITNESS
+                        elif script_gen == SCRIPT_GEN_P2SH_SEGWIT:
+                            script_type = self.types.InputScriptType.SPENDP2SHWITNESS
+                        else:
+                            script_type = self.types.InputScriptType.SPENDMULTISIG
                         txinputtype = self.types.TxInputType(
-                            script_type=self.types.SPENDMULTISIG,
+                            script_type=script_type,
                             multisig=multisig
                         )
                         # find which key is mine
                         for x_pubkey in x_pubkeys:
-                            if is_extended_pubkey(x_pubkey):
-                                xpub, s = BIP32_Account.parse_xpubkey(x_pubkey)
+                            if is_xpubkey(x_pubkey):
+                                xpub, s = parse_xpubkey(x_pubkey)
                                 if xpub in self.xpub_path:
                                     xpub_n = self.client_class.expand_path(self.xpub_path[xpub])
-                                    txinputtype.address_n.extend(xpub_n + s)
+                                    txinputtype._extend_address_n(xpub_n + s)
                                     break
 
                 prev_hash = unhexlify(txin['prevout_hash'])
                 prev_index = txin['prevout_n']
 
+            if 'value' in txin:
+                txinputtype.amount = txin['value']
             txinputtype.prev_hash = prev_hash
             txinputtype.prev_index = prev_index
 
             if 'scriptSig' in txin:
-                script_sig = txin['scriptSig'].decode('hex')
+                script_sig = bfh(txin['scriptSig'])
                 txinputtype.script_sig = script_sig
 
-            if 'sequence' in txin:
-                sequence = txin['sequence']
-                txinputtype.sequence = sequence
+            txinputtype.sequence = txin.get('sequence', 0xffffffff - 1)
 
             inputs.append(txinputtype)
 
         return inputs
 
-    def tx_outputs(self, wallet, tx):
+    def tx_outputs(self, derivation, tx, script_gen=SCRIPT_GEN_LEGACY):
         outputs = []
-        for type, address, amount in tx.outputs():
-            assert type == TYPE_ADDRESS
-            txoutputtype = self.types.TxOutputType()
-            if wallet.is_change(address):
-                address_path = wallet.address_id(address)
-                address_n = self.client_class.expand_path(address_path)
-                txoutputtype.address_n.extend(address_n)
+        has_change = False
+
+        for _type, address, amount in tx.outputs():
+            info = tx.output_info.get(address)
+            if info is not None and not has_change:
+                has_change = True # no more than one change address
+                index, xpubs, m = info
+                if len(xpubs) == 1:
+                    if script_gen == SCRIPT_GEN_NATIVE_SEGWIT:
+                        script_type = self.types.OutputScriptType.PAYTOWITNESS
+                    elif script_gen == SCRIPT_GEN_P2SH_SEGWIT:
+                        script_type = self.types.OutputScriptType.PAYTOP2SHWITNESS
+                    else:
+                        script_type = self.types.OutputScriptType.PAYTOADDRESS
+                    address_n = self.client_class.expand_path(derivation + "/%d/%d"%index)
+                    txoutputtype = self.types.TxOutputType(
+                        amount = amount,
+                        script_type = script_type,
+                        address_n = address_n,
+                    )
+                else:
+                    if script_gen == SCRIPT_GEN_NATIVE_SEGWIT:
+                        script_type = self.types.OutputScriptType.PAYTOWITNESS
+                    elif script_gen == SCRIPT_GEN_P2SH_SEGWIT:
+                        script_type = self.types.OutputScriptType.PAYTOP2SHWITNESS
+                    else:
+                        script_type = self.types.OutputScriptType.PAYTOMULTISIG
+                    address_n = self.client_class.expand_path("/%d/%d"%index)
+                    nodes = map(self.ckd_public.deserialize, xpubs)
+                    pubkeys = [ self.types.HDNodePathType(node=node, address_n=address_n) for node in nodes]
+                    multisig = self.types.MultisigRedeemScriptType(
+                        pubkeys = pubkeys,
+                        signatures = [b''] * len(pubkeys),
+                        m = m)
+                    txoutputtype = self.types.TxOutputType(
+                        multisig = multisig,
+                        amount = amount,
+                        address_n = self.client_class.expand_path(derivation + "/%d/%d"%index),
+                        script_type = script_type)
             else:
-                txoutputtype.address = address
-            txoutputtype.amount = amount
-            addrtype, hash_160 = bc_address_to_hash_160(address)
-            if addrtype == 0:
-                txoutputtype.script_type = self.types.PAYTOADDRESS
-            elif addrtype == 5:
-                txoutputtype.script_type = self.types.PAYTOSCRIPTHASH
-            else:
-                raise BaseException('addrtype')
+                txoutputtype = self.types.TxOutputType()
+                txoutputtype.amount = amount
+                if _type == TYPE_SCRIPT:
+                    txoutputtype.script_type = self.types.OutputScriptType.PAYTOOPRETURN
+                    txoutputtype.op_return_data = address[2:]
+                elif _type == TYPE_ADDRESS:
+                    txoutputtype.script_type = self.types.OutputScriptType.PAYTOADDRESS
+                    txoutputtype.address = address
+
             outputs.append(txoutputtype)
 
         return outputs
@@ -323,18 +398,14 @@ class TrezorCompatiblePlugin(HW_PluginBase):
         t.version = d['version']
         t.lock_time = d['lockTime']
         inputs = self.tx_inputs(tx)
-        t.inputs.extend(inputs)
+        t._extend_inputs(inputs)
         for vout in d['outputs']:
-            o = t.bin_outputs.add()
+            o = t._add_bin_outputs()
             o.amount = vout['value']
-            o.script_pubkey = vout['scriptPubKey'].decode('hex')
+            o.script_pubkey = bfh(vout['scriptPubKey'])
         return t
 
     # This function is called from the trezor libraries (via tx_api)
     def get_tx(self, tx_hash):
         tx = self.prev_tx[tx_hash]
         return self.electrum_tx_to_txtype(tx)
-
-    @staticmethod
-    def is_valid_seed(seed):
-        return True

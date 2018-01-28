@@ -22,38 +22,42 @@
 # ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-
-
 import hashlib
-import os.path
-import re
 import sys
-import threading
 import time
 import traceback
-import urlparse
 import json
 import requests
 
+import urllib.parse
+
+
 try:
-    import paymentrequest_pb2 as pb2
+    from . import paymentrequest_pb2 as pb2
 except ImportError:
     sys.exit("Error: could not find paymentrequest_pb2.py. Create it with 'protoc --proto_path=lib/ --python_out=lib/ lib/paymentrequest.proto'")
 
-import bitcoin
-import util
-from util import print_error
-import transaction
-import x509
-import rsakey
+from . import bitcoin
+from . import util
+from .util import print_error, bh2u, bfh
+from . import transaction
+from . import x509
+from . import rsakey
 
-from bitcoin import TYPE_ADDRESS
+from .bitcoin import TYPE_ADDRESS
 
 REQUEST_HEADERS = {'Accept': 'application/bitcoin-paymentrequest', 'User-Agent': 'Electrum'}
 ACK_HEADERS = {'Content-Type':'application/bitcoin-payment','Accept':'application/bitcoin-paymentack','User-Agent':'Electrum'}
 
 ca_path = requests.certs.where()
-ca_list, ca_keyID = x509.load_certificates(ca_path)
+ca_list = None
+ca_keyID = None
+
+def load_ca_list():
+    global ca_list, ca_keyID
+    if ca_list is None:
+        ca_list, ca_keyID = x509.load_certificates(ca_path)
+
 
 
 # status of payment requests
@@ -65,34 +69,52 @@ PR_PAID    = 3     # send and propagated
 
 
 def get_payment_request(url):
-    u = urlparse.urlparse(url)
+    u = urllib.parse.urlparse(url)
+    error = None
     if u.scheme in ['http', 'https']:
-        response = requests.request('GET', url, headers=REQUEST_HEADERS)
-        data = response.content
-        print_error('fetched payment request', url, len(data))
+        try:
+            response = requests.request('GET', url, headers=REQUEST_HEADERS)
+            response.raise_for_status()
+            # Guard against `bitcoin:`-URIs with invalid payment request URLs
+            if "Content-Type" not in response.headers \
+            or response.headers["Content-Type"] != "application/bitcoin-paymentrequest":
+                data = None
+                error = "payment URL not pointing to a payment request handling server"
+            else:
+                data = response.content
+            print_error('fetched payment request', url, len(response.content))
+        except requests.exceptions.RequestException:
+            data = None
+            error = "payment URL not pointing to a valid server"
     elif u.scheme == 'file':
-        with open(u.path, 'r') as f:
-            data = f.read()
+        try:
+            with open(u.path, 'r') as f:
+                data = f.read()
+        except IOError:
+            data = None
+            error = "payment URL not pointing to a valid file"
     else:
         raise BaseException("unknown scheme", url)
-    pr = PaymentRequest(data)
+    pr = PaymentRequest(data, error)
     return pr
 
 
 class PaymentRequest:
 
-    def __init__(self, data):
+    def __init__(self, data, error=None):
         self.raw = data
+        self.error = error
         self.parse(data)
         self.requestor = None # known after verify
         self.tx = None
-        self.error = None
 
     def __str__(self):
         return self.raw
 
     def parse(self, r):
-        self.id = bitcoin.sha256(r)[0:16].encode('hex')
+        if self.error:
+            return
+        self.id = bh2u(bitcoin.sha256(r)[0:16])
         try:
             self.data = pb2.PaymentRequest()
             self.data.ParseFromString(r)
@@ -113,11 +135,17 @@ class PaymentRequest:
         #return self.get_outputs() != [(TYPE_ADDRESS, self.get_requestor(), self.get_amount())]
 
     def verify(self, contacts):
+        if self.error:
+            return False
         if not self.raw:
             self.error = "Empty request"
-            return
+            return False
         pr = pb2.PaymentRequest()
-        pr.ParseFromString(self.raw)
+        try:
+            pr.ParseFromString(self.raw)
+        except:
+            self.error = "Error: Cannot parse payment request"
+            return False
         if not pr.signature:
             # the address will be dispayed as requestor
             self.requestor = None
@@ -131,6 +159,7 @@ class PaymentRequest:
             return False
 
     def verify_x509(self, paymntreq):
+        load_ca_list()
         if not ca_list:
             self.error = "Trusted certificate authorities list not found"
             return False
@@ -150,7 +179,7 @@ class PaymentRequest:
         # verify the BIP70 signature
         pubkey0 = rsakey.RSAKey(x.modulus, x.exponent)
         sig = paymntreq.signature
-        paymntreq.signature = ''
+        paymntreq.signature = b''
         s = paymntreq.SerializeToString()
         sigBytes = bytearray(sig)
         msgBytes = bytearray(s)
@@ -229,49 +258,39 @@ class PaymentRequest:
         return self.outputs[:]
 
     def send_ack(self, raw_tx, refund_addr):
-
         pay_det = self.details
         if not self.details.payment_url:
             return False, "no url"
-
         paymnt = pb2.Payment()
         paymnt.merchant_data = pay_det.merchant_data
-        paymnt.transactions.append(raw_tx)
-
+        paymnt.transactions.append(bfh(raw_tx))
         ref_out = paymnt.refund_to.add()
-        ref_out.script = transaction.Transaction.pay_script(TYPE_ADDRESS, refund_addr)
+        ref_out.script = util.bfh(transaction.Transaction.pay_script(TYPE_ADDRESS, refund_addr))
         paymnt.memo = "Paid using Electrum"
         pm = paymnt.SerializeToString()
-
-        payurl = urlparse.urlparse(pay_det.payment_url)
+        payurl = urllib.parse.urlparse(pay_det.payment_url)
         try:
             r = requests.post(payurl.geturl(), data=pm, headers=ACK_HEADERS, verify=ca_path)
         except requests.exceptions.SSLError:
-            print "Payment Message/PaymentACK verify Failed"
+            print("Payment Message/PaymentACK verify Failed")
             try:
                 r = requests.post(payurl.geturl(), data=pm, headers=ACK_HEADERS, verify=False)
             except Exception as e:
-                print e
+                print(e)
                 return False, "Payment Message/PaymentACK Failed"
-
         if r.status_code >= 500:
             return False, r.reason
-
         try:
             paymntack = pb2.PaymentACK()
             paymntack.ParseFromString(r.content)
         except Exception:
             return False, "PaymentACK could not be processed. Payment was sent; please manually verify that payment was received."
-
-        print "PaymentACK message received: %s" % paymntack.memo
+        print("PaymentACK message received: %s" % paymntack.memo)
         return True, paymntack.memo
-
-    def set_paid(self, tx_hash):
-        self.tx = tx_hash
 
 
 def make_unsigned_request(req):
-    from transaction import Transaction
+    from .transaction import Transaction
     addr = req['address']
     time = req.get('time', 0)
     exp = req.get('exp', 0)
@@ -283,7 +302,7 @@ def make_unsigned_request(req):
     if amount is None:
         amount = 0
     memo = req['memo']
-    script = Transaction.pay_script(TYPE_ADDRESS, addr).decode('hex')
+    script = bfh(Transaction.pay_script(TYPE_ADDRESS, addr))
     outputs = [(script, amount)]
     pd = pb2.PaymentDetails()
     for script, amount in outputs:
@@ -293,7 +312,7 @@ def make_unsigned_request(req):
     pd.memo = memo
     pr = pb2.PaymentRequest()
     pr.serialized_payment_details = pd.SerializeToString()
-    pr.signature = ''
+    pr.signature = util.to_bytes('')
     return pr
 
 
@@ -307,9 +326,9 @@ def sign_request_with_alias(pr, alias, alias_privkey):
     pr.signature = ec_key.sign_message(message, compressed, address)
 
 
-
 def verify_cert_chain(chain):
     """ Verify a chain of certificates. The last certificate is the CA"""
+    load_ca_list()
     # parse the chain
     cert_num = len(chain)
     x509_chain = []
@@ -362,7 +381,7 @@ def verify_cert_chain(chain):
 
 
 def check_ssl_config(config):
-    import pem
+    from . import pem
     key_path = config.get('ssl_privkey')
     cert_path = config.get('ssl_chain')
     with open(key_path, 'r') as f:
@@ -384,7 +403,7 @@ def check_ssl_config(config):
     return requestor
 
 def sign_request_with_x509(pr, key_path, cert_path):
-    import pem
+    from . import pem
     with open(key_path, 'r') as f:
         params = pem.parse_private_key(f.read())
         privkey = rsakey.RSAKey(*params)
@@ -392,7 +411,7 @@ def sign_request_with_x509(pr, key_path, cert_path):
         s = f.read()
         bList = pem.dePemList(s, "CERTIFICATE")
     certificates = pb2.X509Certificates()
-    certificates.certificate.extend(map(str, bList))
+    certificates.certificate.extend(map(bytes, bList))
     pr.pki_type = 'x509+sha256'
     pr.pki_data = certificates.SerializeToString()
     msgBytes = bytearray(pr.SerializeToString())
@@ -406,7 +425,7 @@ def serialize_request(req):
     signature = req.get('sig')
     requestor = req.get('name')
     if requestor and signature:
-        pr.signature = signature.decode('hex')
+        pr.signature = bfh(signature)
         pr.pki_type = 'dnssec+btc'
         pr.pki_data = str(requestor)
     return pr
@@ -424,42 +443,54 @@ def make_request(config, req):
 
 class InvoiceStore(object):
 
-    def __init__(self, config):
-        self.config = config
+    def __init__(self, storage):
+        self.storage = storage
         self.invoices = {}
-        self.load_invoices()
+        self.paid = {}
+        d = self.storage.get('invoices', {})
+        self.load(d)
 
-    def load_invoices(self):
-        path = os.path.join(self.config.path, 'invoices')
-        try:
-            with open(path, 'r') as f:
-                d = json.loads(f.read())
-        except:
-            return
+    def set_paid(self, pr, txid):
+        pr.tx = txid
+        self.paid[txid] = pr.get_id()
+
+    def load(self, d):
         for k, v in d.items():
             try:
-                pr = PaymentRequest(v.get('hex').decode('hex'))
+                pr = PaymentRequest(bfh(v.get('hex')))
                 pr.tx = v.get('txid')
                 pr.requestor = v.get('requestor')
                 self.invoices[k] = pr
+                if pr.tx:
+                    self.paid[pr.tx] = k
             except:
                 continue
+
+    def import_file(self, path):
+        try:
+            with open(path, 'r') as f:
+                d = json.loads(f.read())
+                self.load(d)
+        except:
+            traceback.print_exc(file=sys.stderr)
+            return
+        self.save()
 
     def save(self):
         l = {}
         for k, pr in self.invoices.items():
             l[k] = {
-                'hex': str(pr).encode('hex'),
+                'hex': bh2u(pr.raw),
                 'requestor': pr.requestor,
                 'txid': pr.tx
             }
-        path = os.path.join(self.config.path, 'invoices')
-        with open(path, 'w') as f:
-            s = json.dumps(l, indent=4, sort_keys=True)
-            r = f.write(s)
+        self.storage.put('invoices', l)
 
     def get_status(self, key):
         pr = self.get(key)
+        if pr is None:
+            print_error("[InvoiceStore] get_status() can't find pr for", key)
+            return
         if pr.tx is not None:
             return PR_PAID
         if pr.has_expired():
@@ -483,3 +514,5 @@ class InvoiceStore(object):
         # sort
         return self.invoices.values()
 
+    def unpaid_invoices(self):
+        return [ self.invoices[k] for k in filter(lambda x: self.get_status(x)!=PR_PAID, self.invoices.keys())]

@@ -26,7 +26,7 @@
 
 import threading
 
-from PyQt4.Qt import QVBoxLayout, QLabel, SIGNAL
+from PyQt5.Qt import QVBoxLayout, QLabel
 from electrum_gui.qt.password_dialog import PasswordDialog, PW_PASSPHRASE
 from electrum_gui.qt.util import *
 
@@ -39,18 +39,25 @@ class QtHandlerBase(QObject, PrintError):
     '''An interface between the GUI (here, QT) and the device handling
     logic for handling I/O.'''
 
-    qcSig = pyqtSignal(object, object)
-    ynSig = pyqtSignal(object)
+    passphrase_signal = pyqtSignal(object, object)
+    message_signal = pyqtSignal(object, object)
+    error_signal = pyqtSignal(object)
+    word_signal = pyqtSignal(object)
+    clear_signal = pyqtSignal()
+    query_signal = pyqtSignal(object, object)
+    yes_no_signal = pyqtSignal(object)
+    status_signal = pyqtSignal(object)
 
     def __init__(self, win, device):
         super(QtHandlerBase, self).__init__()
-        win.connect(win, SIGNAL('clear_dialog'), self.clear_dialog)
-        win.connect(win, SIGNAL('error_dialog'), self.error_dialog)
-        win.connect(win, SIGNAL('message_dialog'), self.message_dialog)
-        win.connect(win, SIGNAL('passphrase_dialog'), self.passphrase_dialog)
-        win.connect(win, SIGNAL('word_dialog'), self.word_dialog)
-        self.qcSig.connect(self.win_query_choice)
-        self.ynSig.connect(self.win_yes_no_question)
+        self.clear_signal.connect(self.clear_dialog)
+        self.error_signal.connect(self.error_dialog)
+        self.message_signal.connect(self.message_dialog)
+        self.passphrase_signal.connect(self.passphrase_dialog)
+        self.word_signal.connect(self.word_dialog)
+        self.query_signal.connect(self.win_query_choice)
+        self.yes_no_signal.connect(self.win_yes_no_question)
+        self.status_signal.connect(self._update_status)
         self.win = win
         self.device = device
         self.dialog = None
@@ -59,36 +66,44 @@ class QtHandlerBase(QObject, PrintError):
     def top_level_window(self):
         return self.win.top_level_window()
 
+    def update_status(self, paired):
+        self.status_signal.emit(paired)
+
+    def _update_status(self, paired):
+        button = self.button
+        icon = button.icon_paired if paired else button.icon_unpaired
+        button.setIcon(QIcon(icon))
+
     def query_choice(self, msg, labels):
         self.done.clear()
-        self.qcSig.emit(msg, labels)
+        self.query_signal.emit(msg, labels)
         self.done.wait()
         return self.choice
 
     def yes_no_question(self, msg):
         self.done.clear()
-        self.ynSig.emit(msg)
+        self.yes_no_signal.emit(msg)
         self.done.wait()
         return self.ok
 
     def show_message(self, msg, on_cancel=None):
-        self.win.emit(SIGNAL('message_dialog'), msg, on_cancel)
+        self.message_signal.emit(msg, on_cancel)
 
     def show_error(self, msg):
-        self.win.emit(SIGNAL('error_dialog'), msg)
+        self.error_signal.emit(msg)
 
     def finished(self):
-        self.win.emit(SIGNAL('clear_dialog'))
+        self.clear_signal.emit()
 
     def get_word(self, msg):
         self.done.clear()
-        self.win.emit(SIGNAL('word_dialog'), msg)
+        self.word_signal.emit(msg)
         self.done.wait()
         return self.word
 
     def get_passphrase(self, msg, confirm):
         self.done.clear()
-        self.win.emit(SIGNAL('passphrase_dialog'), msg, confirm)
+        self.passphrase_signal.emit(msg, confirm)
         self.done.wait()
         return self.passphrase
 
@@ -108,7 +123,7 @@ class QtHandlerBase(QObject, PrintError):
             vbox.addWidget(pw)
             vbox.addLayout(Buttons(CancelButton(d), OkButton(d)))
             d.setLayout(vbox)
-            passphrase = unicode(pw.text()) if d.exec_() else None
+            passphrase = pw.text() if d.exec_() else None
         self.passphrase = passphrase
         self.done.set()
 
@@ -122,7 +137,7 @@ class QtHandlerBase(QObject, PrintError):
         hbox.addWidget(text)
         hbox.addStretch(1)
         dialog.exec_()  # Firmware cannot handle cancellation
-        self.word = unicode(text.text())
+        self.word = text.text()
         self.done.set()
 
     def message_dialog(self, msg, on_cancel):
@@ -151,5 +166,52 @@ class QtHandlerBase(QObject, PrintError):
         self.done.set()
 
     def win_yes_no_question(self, msg):
-        self.ok = self.top_level_window().question(msg)
+        self.ok = self.win.question(msg)
         self.done.set()
+
+
+
+from electrum.plugins import hook
+from electrum.util import UserCancelled
+from electrum_gui.qt.main_window import StatusBarButton
+
+class QtPluginBase(object):
+
+    @hook
+    def load_wallet(self, wallet, window):
+        for keystore in wallet.get_keystores():
+            if not isinstance(keystore, self.keystore_class):
+                continue
+            if not self.libraries_available:
+                window.show_error(
+                    _("Cannot find python library for") + " '%s'.\n" % self.name \
+                    + _("Make sure you install it with python3")
+                )
+                return
+            tooltip = self.device + '\n' + (keystore.label or 'unnamed')
+            cb = partial(self.show_settings_dialog, window, keystore)
+            button = StatusBarButton(QIcon(self.icon_unpaired), tooltip, cb)
+            button.icon_paired = self.icon_paired
+            button.icon_unpaired = self.icon_unpaired
+            window.statusBar().addPermanentWidget(button)
+            handler = self.create_handler(window)
+            handler.button = button
+            keystore.handler = handler
+            keystore.thread = TaskThread(window, window.on_error)
+            # Trigger a pairing
+            keystore.thread.add(partial(self.get_client, keystore))
+
+    def choose_device(self, window, keystore):
+        '''This dialog box should be usable even if the user has
+        forgotten their PIN or it is in bootloader mode.'''
+        device_id = self.device_manager().xpub_id(keystore.xpub)
+        if not device_id:
+            try:
+                info = self.device_manager().select_device(self, keystore.handler, keystore)
+            except UserCancelled:
+                return
+            device_id = info.device.id_
+        return device_id
+
+    def show_settings_dialog(self, window, keystore):
+        device_id = self.choose_device(window, keystore)

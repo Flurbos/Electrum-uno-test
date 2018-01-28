@@ -23,15 +23,16 @@
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from PyQt4.QtCore import *
-from PyQt4.QtGui import *
-from qrtextedit import ScanQRTextEdit
+from PyQt5.QtCore import *
+from PyQt5.QtGui import *
+from PyQt5.QtWidgets import QCompleter, QPlainTextEdit
+from .qrtextedit import ScanQRTextEdit
 
 import re
 from decimal import Decimal
 from electrum import bitcoin
 
-import util
+from . import util
 
 RE_ADDRESS = '[1-9A-HJ-NP-Za-km-z]{26,}'
 RE_ALIAS = '(.*?)\s*\<([1-9A-HJ-NP-Za-km-z]{26,})\>'
@@ -60,12 +61,6 @@ class PayToEdit(ScanQRTextEdit):
 
         self.previous_payto = ''
 
-    def lock_amount(self):
-        self.amount_edit.setFrozen(True)
-
-    def unlock_amount(self):
-        self.amount_edit.setFrozen(False)
-
     def setFrozen(self, b):
         self.setReadOnly(b)
         self.setStyleSheet(frozen_style if b else normal_style)
@@ -73,24 +68,39 @@ class PayToEdit(ScanQRTextEdit):
             button.setHidden(b)
 
     def setGreen(self):
-        self.setStyleSheet(util.GREEN_BG)
+        self.setStyleSheet(util.ColorScheme.GREEN.as_stylesheet(True))
 
     def setExpired(self):
-        self.setStyleSheet(util.RED_BG)
+        self.setStyleSheet(util.ColorScheme.RED.as_stylesheet(True))
 
     def parse_address_and_amount(self, line):
         x, y = line.split(',')
-        n = re.match('^SCRIPT\s+([0-9a-fA-F]+)$', x.strip())
-        if n:
-            script = str(n.group(1)).decode('hex')
-            amount = self.parse_amount(y)
-            return bitcoin.TYPE_SCRIPT, script, amount
-        else:
+        out_type, out = self.parse_output(x)
+        amount = self.parse_amount(y)
+        return out_type, out, amount
+
+    def parse_output(self, x):
+        try:
             address = self.parse_address(x)
-            amount = self.parse_amount(y)
-            return bitcoin.TYPE_ADDRESS, address, amount
+            return bitcoin.TYPE_ADDRESS, address
+        except:
+            script = self.parse_script(x)
+            return bitcoin.TYPE_SCRIPT, script
+
+    def parse_script(self, x):
+        from electrum.transaction import opcodes, push_script
+        script = ''
+        for word in x.split():
+            if word[0:3] == 'OP_':
+                assert word in opcodes.lookup
+                script += chr(opcodes.lookup[word])
+            else:
+                script += push_script(word).decode('hex')
+        return script
 
     def parse_amount(self, x):
+        if x.strip() == '!':
+            return '!'
         p = pow(10, self.amount_edit.decimal_point())
         return int(p * Decimal(x.strip()))
 
@@ -106,7 +116,7 @@ class PayToEdit(ScanQRTextEdit):
         if self.is_pr:
             return
         # filter out empty lines
-        lines = filter(lambda x: x, self.lines())
+        lines = [i for i in self.lines() if i]
         outputs = []
         total = 0
         self.payto_address = None
@@ -116,13 +126,14 @@ class PayToEdit(ScanQRTextEdit):
                 self.scan_f(data)
                 return
             try:
-                self.payto_address = self.parse_address(data)
+                self.payto_address = self.parse_output(data)
             except:
                 pass
             if self.payto_address:
-                self.unlock_amount()
+                self.win.lock_amount(False)
                 return
 
+        is_max = False
         for i, line in enumerate(lines):
             try:
                 _type, to_address, amount = self.parse_address_and_amount(line)
@@ -131,37 +142,41 @@ class PayToEdit(ScanQRTextEdit):
                 continue
 
             outputs.append((_type, to_address, amount))
-            total += amount
+            if amount == '!':
+                is_max = True
+            else:
+                total += amount
 
+        self.win.is_max = is_max
         self.outputs = outputs
         self.payto_address = None
 
-        if outputs:
-            self.amount_edit.setAmount(total)
+        if self.win.is_max:
+            self.win.do_update_fee()
         else:
-            self.amount_edit.setText("")
-
-        if total or len(lines)>1:
-            self.lock_amount()
-        else:
-            self.unlock_amount()
-
+            self.amount_edit.setAmount(total if outputs else None)
+            self.win.lock_amount(total or len(lines)>1)
 
     def get_errors(self):
         return self.errors
 
-    def get_outputs(self):
+    def get_recipient(self):
+        return self.payto_address
+
+    def get_outputs(self, is_max):
         if self.payto_address:
-            try:
+            if is_max:
+                amount = '!'
+            else:
                 amount = self.amount_edit.get_amount()
-            except:
-                amount = None
-            self.outputs = [(bitcoin.TYPE_ADDRESS, self.payto_address, amount)]
+
+            _type, addr = self.payto_address
+            self.outputs = [(_type, addr, amount)]
 
         return self.outputs[:]
 
     def lines(self):
-        return unicode(self.toPlainText()).split('\n')
+        return self.toPlainText().split('\n')
 
     def is_multiline(self):
         return len(self.lines()) > 1
@@ -171,8 +186,9 @@ class PayToEdit(ScanQRTextEdit):
         self.update_size()
 
     def update_size(self):
+        lineHeight = QFontMetrics(self.document().defaultFont()).height()
         docHeight = self.document().size().height()
-        h = docHeight*17 + 11
+        h = docHeight * lineHeight + 11
         if self.heightMin <= h <= self.heightMax:
             self.setMinimumHeight(h)
             self.setMaximumHeight(h)
@@ -190,10 +206,10 @@ class PayToEdit(ScanQRTextEdit):
         if self.c.widget() != self:
             return
         tc = self.textCursor()
-        extra = completion.length() - self.c.completionPrefix().length()
+        extra = len(completion) - len(self.c.completionPrefix())
         tc.movePosition(QTextCursor.Left)
         tc.movePosition(QTextCursor.EndOfWord)
-        tc.insertText(completion.right(extra))
+        tc.insertText(completion[-extra:])
         self.setTextCursor(tc)
 
 
@@ -223,25 +239,24 @@ class PayToEdit(ScanQRTextEdit):
         QPlainTextEdit.keyPressEvent(self, e)
 
         ctrlOrShift = e.modifiers() and (Qt.ControlModifier or Qt.ShiftModifier)
-        if self.c is None or (ctrlOrShift and e.text().isEmpty()):
+        if self.c is None or (ctrlOrShift and not e.text()):
             return
 
-        eow = QString("~!@#$%^&*()_+{}|:\"<>?,./;'[]\\-=")
-        hasModifier = (e.modifiers() != Qt.NoModifier) and not ctrlOrShift;
+        eow = "~!@#$%^&*()_+{}|:\"<>?,./;'[]\\-="
+        hasModifier = (e.modifiers() != Qt.NoModifier) and not ctrlOrShift
         completionPrefix = self.textUnderCursor()
 
-        if hasModifier or e.text().isEmpty() or completionPrefix.length() < 1 or eow.contains(e.text().right(1)):
+        if hasModifier or not e.text() or len(completionPrefix) < 1 or eow.find(e.text()[-1]) >= 0:
             self.c.popup().hide()
             return
 
         if completionPrefix != self.c.completionPrefix():
-            self.c.setCompletionPrefix(completionPrefix);
+            self.c.setCompletionPrefix(completionPrefix)
             self.c.popup().setCurrentIndex(self.c.completionModel().index(0, 0))
 
         cr = self.cursorRect()
         cr.setWidth(self.c.popup().sizeHintForColumn(0) + self.c.popup().verticalScrollBar().sizeHint().width())
         self.c.complete(cr)
-
 
     def qr_input(self):
         data = super(PayToEdit,self).qr_input()
@@ -263,6 +278,9 @@ class PayToEdit(ScanQRTextEdit):
         self.previous_payto = key
         if not (('.' in key) and (not '<' in key) and (not ' ' in key)):
             return
+        parts = key.split(sep=',')  # assuming single line
+        if parts and len(parts) > 0 and bitcoin.is_address(parts[0]):
+            return
         try:
             data = self.win.contacts.resolve(key)
         except:
@@ -279,7 +297,7 @@ class PayToEdit(ScanQRTextEdit):
 
         #if self.win.config.get('openalias_autoadd') == 'checked':
         self.win.contacts[key] = ('openalias', name)
-        self.win.update_contacts_tab()
+        self.win.contact_list.on_update()
 
         self.setFrozen(True)
         if data.get('type') == 'openalias':

@@ -14,6 +14,10 @@ Unobtanium Electrum - Lightweight Unobtanium client
 .. image:: https://travis-ci.org/spesmilo/electrum.svg?branch=master
     :target: https://travis-ci.org/spesmilo/electrum
     :alt: Build Status
+.. image:: https://coveralls.io/repos/github/spesmilo/electrum/badge.svg?branch=master
+    :target: https://coveralls.io/github/spesmilo/electrum?branch=master
+    :alt: Test coverage statistics
+
 
 
 
@@ -22,19 +26,27 @@ Unobtanium Electrum - Lightweight Unobtanium client
 Getting started
 ===============
 
-Electrum is a pure python application. However, if you want to use the
-Qt interface, then you need to install the Qt dependencies::
+Electrum is a pure python application. If you want to use the
+Qt interface, install the Qt dependencies::
 
-    sudo apt-get install python-pip python-qt4
+    sudo apt-get install python3-pyqt5
 
-
-If you downloaded the official package (tar.gz), then you can run
+If you downloaded the official package (tar.gz), you can run
 Electrum from its root directory, without installing it on your
-system. To run Electrum from this directory, just do::
+system; all the python dependencies are included in the 'packages'
+directory. To run Electrum from its root directory, just do::
 
     ./electrum
 
-If you cloned the git repository, then you need to compile extra files
+You can also install Electrum on your system, by running this command::
+
+    sudo apt-get install python3-setuptools
+    python3 setup.py install
+
+This will download and install the Python dependencies used by
+Electrum, instead of using the 'packages' directory.
+
+If you cloned the git repository, you need to compile extra files
 before you can run Electrum. Read the next section, "Development
 Version".
 
@@ -48,39 +60,25 @@ Check out the code from Github::
     git clone git://github.com/spesmilo/electrum.git
     cd electrum
 
+Run install (this should install dependencies)::
+
+    python3 setup.py install
+
 Compile the icons file for Qt::
 
-    sudo apt-get install pyqt4-dev-tools
-    pyrcc4 icons.qrc -o gui/icons_rc.py
+    sudo apt-get install pyqt5-dev-tools
+    pyrcc5 icons.qrc -o gui/qt/icons_rc.py
 
 Compile the protobuf description file::
 
     sudo apt-get install protobuf-compiler
     protoc --proto_path=lib/ --python_out=lib/ lib/paymentrequest.proto
 
-Create translations::
+Create translations (optional)::
 
-    sudo apt-get install python-pycurl gettext
+    sudo apt-get install python-requests gettext
     ./contrib/make_locale
 
-
-
-Install on Linux systems
-========================
-
-If you install Electrum on your system, you can run it from any
-directory.
-
-If you have pip, you can do::
-
-    python setup.py sdist
-    sudo pip install --pre dist/Electrum-2.0.tar.gz
-
-
-If you don't have pip, install with::
-
-    python setup.py sdist
-    sudo python setup.py install
 
 
 
@@ -88,30 +86,32 @@ Creating Binaries
 =================
 
 
-In oder to creating binaries, you must create the 'packages' directory::
+To create binaries, create the 'packages' directory::
 
-    ./contrib/pake_packages
+    ./contrib/make_packages
 
+This directory contains the python dependencies used by Electrum.
 
-Mac OS X
+Mac OS X / macOS
 --------
 
-    # On port based installs
-    sudo python setup-release.py py2app
+::
 
-    # On brew installs
-    ARCHFLAGS="-arch i386 -arch x86_64" sudo python setup-release.py py2app --includes sip
-
+    # On MacPorts installs: 
+    sudo python3 setup-release.py py2app
+    
+    # On Homebrew installs: 
+    ARCHFLAGS="-arch i386 -arch x86_64" sudo python3 setup-release.py py2app --includes sip
+    
     sudo hdiutil create -fs HFS+ -volname "Electrum" -srcfolder dist/Electrum.app dist/electrum-VERSION-macosx.dmg
-
 
 Windows
 -------
 
-see contrib/build-wine/README
+See `contrib/build-wine/README` file.
 
 
 Android
 -------
 
-see gui/kivy/Readme.txt
+See `gui/kivy/Readme.txt` file.
