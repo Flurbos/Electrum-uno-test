@@ -839,14 +839,8 @@ def get_parser():
     add_global_options(parser)
     subparsers = parser.add_subparsers(dest='cmd', metavar='<command>')
     # gui
-<<<<<<< HEAD
-    parser_gui = subparsers.add_parser('gui', parents=[parent_parser], description="Run Electrum's Graphical User Interface.", help="Run GUI (default)")
-    parser_gui.add_argument("url", nargs='?', default=None, help="unobtanium URI (or bip70 file)")
-    #parser_gui.set_defaults(func=run_gui)
-=======
     parser_gui = subparsers.add_parser('gui', description="Run Unobtanium Electrum's Graphical User Interface.", help="Run GUI (default)")
     parser_gui.add_argument("url", nargs='?', default=None, help="unobtanium URI (or bip70 file)")
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
     parser_gui.add_argument("-g", "--gui", dest="gui", help="select graphical user interface", choices=['qt', 'kivy', 'text', 'stdio'])
     parser_gui.add_argument("-o", "--offline", action="store_true", dest="offline", default=False, help="Run offline")
     parser_gui.add_argument("-m", action="store_true", dest="hide_gui", default=False, help="hide GUI on startup")

@@ -74,12 +74,12 @@ class NetworkConstants:
     @classmethod
     def set_mainnet(cls):
         cls.TESTNET = False
-        cls.WIF_PREFIX = 0x80
-        cls.ADDRTYPE_P2PKH = 0
-        cls.ADDRTYPE_P2SH = 5
-        cls.SEGWIT_HRP = "bc"
-        cls.GENESIS = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
-        cls.DEFAULT_PORTS = {'t': '50001', 's': '50002'}
+        cls.WIF_PREFIX = 0xE0
+        cls.ADDRTYPE_P2PKH = 130
+        cls.ADDRTYPE_P2SH = 0x1E
+        cls.SEGWIT_HRP = "un"
+        cls.GENESIS = "000004c2fc5fffb810dccc197d603690099a68305232e552d96ccbe8e2c52b75"
+        cls.DEFAULT_PORTS = {'t': '50005', 's': '50006'}
         cls.DEFAULT_SERVERS = read_json('servers.json', {})
         cls.CHECKPOINTS = read_json('checkpoints.json', [])
 
@@ -87,11 +87,11 @@ class NetworkConstants:
     def set_testnet(cls):
         cls.TESTNET = True
         cls.WIF_PREFIX = 0xef
-        cls.ADDRTYPE_P2PKH = 111
-        cls.ADDRTYPE_P2SH = 196
-        cls.SEGWIT_HRP = "tb"
-        cls.GENESIS = "000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943"
-        cls.DEFAULT_PORTS = {'t':'51001', 's':'51002'}
+        cls.ADDRTYPE_P2PKH = 0x44
+        cls.ADDRTYPE_P2SH = 0x1E
+        cls.SEGWIT_HRP = "pr"
+        cls.GENESIS = "000004aa8e535bedb2186a3c1c2f3b119e70c2f61286b15ec98a81021c3a4a0c"
+        cls.DEFAULT_PORTS = {'t':'51005', 's':'51006'}
         cls.DEFAULT_SERVERS = read_json('servers_testnet.json', {})
         cls.CHECKPOINTS = read_json('checkpoints_testnet.json', [])
 
@@ -358,17 +358,9 @@ def p2wpkh_nested_script(pubkey):
     pkh = bh2u(hash_160(bfh(pubkey)))
     return '00' + push_script(pkh)
 
-<<<<<<< HEAD
-def hash_160_to_bc_address(h160, addrtype = 130):
-    vh160 = chr(addrtype) + h160
-    h = Hash(vh160)
-    addr = vh160 + h[0:4]
-    return base_encode(addr, base=58)
-=======
 def p2wsh_nested_script(witness_script):
     wsh = bh2u(sha256(bfh(witness_script)))
     return '00' + push_script(wsh)
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
 
 def pubkey_to_address(txin_type, pubkey):
     if txin_type == 'p2pkh':
@@ -529,19 +521,6 @@ SCRIPT_TYPES = {
 }
 
 
-<<<<<<< HEAD
-def SecretToASecret(secret, compressed=False, addrtype=130):
-    vchIn = chr((224)&255) + secret
-    if compressed: vchIn += '\01'
-    return EncodeBase58Check(vchIn)
-
-def ASecretToSecret(key, addrtype=130):
-    vch = DecodeBase58Check(key)
-    if vch and vch[0] == chr((224)&255):
-        return vch[1:]
-    elif is_minikey(key):
-        return minikey_to_private_key(key)
-=======
 def serialize_privkey(secret, compressed, txin_type):
     prefix = bytes([(SCRIPT_TYPES[txin_type]+NetworkConstants.WIF_PREFIX)&255])
     suffix = b'\01' if compressed else b''
@@ -559,7 +538,6 @@ def deserialize_privkey(key):
         assert len(vch) in [33, 34]
         compressed = len(vch) == 34
         return txin_type, vch[1:33], compressed
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
     else:
         raise BaseException("cannot deserialize", key)
 
@@ -602,11 +580,7 @@ def is_b58_address(addr):
         addrtype, h = b58_address_to_hash160(addr)
     except Exception as e:
         return False
-<<<<<<< HEAD
-    if addrtype not in [130, 30]:
-=======
     if addrtype not in [NetworkConstants.ADDRTYPE_P2PKH, NetworkConstants.ADDRTYPE_P2SH]:
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
         return False
     return addr == hash160_to_b58_address(h, addrtype)
 
@@ -644,15 +618,8 @@ from ecdsa.util import string_to_number, number_to_string
 
 
 def msg_magic(message):
-<<<<<<< HEAD
-    varint = var_int(len(message))
-    encoded_varint = "".join([chr(int(varint[i:i+2], 16)) for i in xrange(0, len(varint), 2)])
-    return "\x1bUnobtanium Signed Message:\n" + encoded_varint + message
-=======
     length = bfh(var_int(len(message)))
     return b"\x1bUnobtanium Signed Message:\n" + length + message
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
-
 
 def verify_message(address, sig, message):
     assert_bytes(sig, message)
@@ -993,7 +960,7 @@ def xpub_from_xprv(xprv):
 
 
 def bip32_root(seed, xtype):
-    I = hmac.new(b"Bitcoin seed", seed, hashlib.sha512).digest()
+    I = hmac.new(b"Unobtanium seed", seed, hashlib.sha512).digest()
     master_k = I[0:32]
     master_c = I[32:]
     K, cK = get_pubkeys_from_secret(master_k)

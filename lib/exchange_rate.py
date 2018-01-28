@@ -82,22 +82,11 @@ class ExchangeBase(PrintError):
     def historical_rate(self, ccy, d_t):
         return self.history.get(ccy, {}).get(d_t.strftime('%Y-%m-%d'))
 
-<<<<<<< HEAD:plugins/exchange_rate/exchange_rate.py
-class cryptapus(ExchangeBase):
-    def get_rates(self, ccy):
-        quote_currencies = {}
-        json = self.get_json('cryptap.us', '/uno/jswallet/ticker.php')
-        for cur in json:
-            quote_currencies[str(cur)] = Decimal(json[cur]['last'])
-        return quote_currencies
-=======
     def get_currencies(self):
         rates = self.get_rates('')
         return sorted([str(a) for (a, b) in rates.items() if b is not None and len(a)==3])
 
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a:lib/exchange_rate.py
-
-"""
+#"""
 class BitcoinAverage(ExchangeBase):
 
     def get_rates(self, ccy):
@@ -331,29 +320,6 @@ class Winkdex(ExchangeBase):
         return dict([(h['timestamp'][:10], h['price'] / 100.0)
                      for h in history])
 
-<<<<<<< HEAD:plugins/exchange_rate/exchange_rate.py
-class MercadoBitcoin(ExchangeBase):
-    def get_rates(self,ccy):
-        json = self.get_json('mercadobitcoin.net',
-                                "/api/ticker/ticker_bitcoin")
-        return {'BRL': Decimal(json['ticker']['last'])}
-    
-    def history_ccys(self):
-        return ['BRL']
-
-class Bitcointoyou(ExchangeBase):
-    def get_rates(self,ccy):
-        json = self.get_json('bitcointoyou.com',
-                                "/API/ticker.aspx")
-        return {'BRL': Decimal(json['ticker']['last'])}
-
-    def history_ccys(self):
-        return ['BRL']
-"""
-
-=======
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a:lib/exchange_rate.py
-
 def dictinvert(d):
     inv = {}
     for k, vlist in d.items():
@@ -500,19 +466,8 @@ class FxThread(ThreadJob):
 
     def get_fiat_status_text(self, btc_balance, base_unit, decimal_point):
         rate = self.exchange_rate()
-<<<<<<< HEAD:plugins/exchange_rate/exchange_rate.py
-        return _("  (No FX rate available)") if rate is None else "1 kg/Un~%s %s" % (self.value_str(COIN, rate), self.ccy)
-
-    def get_historical_rates(self):
-        if self.show_history():
-            self.exchange.get_historical_rates(self.ccy)
-
-    def requires_settings(self):
-        return True
-=======
         return _("  (No FX rate available)") if rate is None else " 1 %s~%s %s" % (base_unit,
             self.value_str(COIN / (10**(8 - decimal_point)), rate), self.ccy)
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a:lib/exchange_rate.py
 
     def value_str(self, satoshis, rate):
         if satoshis is None:  # Can happen with incomplete history

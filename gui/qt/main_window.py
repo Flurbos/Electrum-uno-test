@@ -363,12 +363,8 @@ class ElectrumWindow(QMainWindow, MessageBoxMixin, PrintError):
             self.setGeometry(100, 100, 840, 400)
 
     def watching_only_changed(self):
-<<<<<<< HEAD
-        title = 'Unobtanium Electrum %s  -  %s' % (self.wallet.electrum_version,
-=======
         name = "Prototanium Electrum" if NetworkConstants.TESTNET else "Unobtanium Electrum"
         title = '%s %s  -  %s' % (name, self.wallet.electrum_version,
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
                                         self.wallet.basename())
         extra = [self.wallet.storage.get('wallet_type', '?')]
         if self.wallet.is_watching_only():
@@ -410,13 +406,8 @@ class ElectrumWindow(QMainWindow, MessageBoxMixin, PrintError):
             try:
                 shutil.copy2(path, new_path)
                 self.show_message(_("A copy of your wallet file was created in")+" '%s'" % str(new_path), title=_("Wallet backup created"))
-<<<<<<< HEAD
-            except (IOError, os.error), reason:
-                self.show_critical(_("Unobtanium Electrum was unable to copy your wallet file to the specified location.") + "\n" + str(reason), title=_("Unable to create backup"))
-=======
             except (IOError, os.error) as reason:
                 self.show_critical(_("Unobtanium Electrum was unable to copy your wallet file to the specified location.") + "\n" + str(reason), title=_("Unable to create backup"))
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
 
     def update_recently_visited(self, filename):
         recent = self.config.get('recently_open', [])
@@ -505,13 +496,8 @@ class ElectrumWindow(QMainWindow, MessageBoxMixin, PrintError):
         tools_menu = menubar.addMenu(_("&Tools"))
 
         # Settings / Preferences are all reserved keywords in OSX using this as work around
-<<<<<<< HEAD
-        tools_menu.addAction(_("Unobtanium Electrum preferences") if sys.platform == 'darwin' else _("Preferences"), self.settings_dialog)
-        tools_menu.addAction(_("&Network"), self.run_network_dialog)
-=======
         tools_menu.addAction(_("Unobtanium Electrum preferences") if sys.platform == 'darwin' else _("Preferences"), self.settings_dialog)
         tools_menu.addAction(_("&Network"), lambda: self.gui_object.show_network_dialog(self))
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
         tools_menu.addAction(_("&Plugins"), self.plugins_dialog)
         tools_menu.addSeparator()
         tools_menu.addAction(_("&Sign/verify message"), self.sign_verify_message)
@@ -543,13 +529,6 @@ class ElectrumWindow(QMainWindow, MessageBoxMixin, PrintError):
         d = self.network.get_donation_address()
         if d:
             host = self.network.get_parameters()[0]
-<<<<<<< HEAD
-            self.pay_to_URI('unobtanium:%s?message=donation for %s'%(d, host))
-
-    def show_about(self):
-        QMessageBox.about(self, "Unobtanium Electrum",
-            _("Version")+" %s" % (self.wallet.electrum_version) + "\n\n" + _("Unobtanium Electrum's focus is speed, with low resource usage and simplifying Unobtanium. You do not need to perform regular backups, because your wallet can be recovered from a secret phrase that you can memorize or write on paper. Startup times are instant because it operates in conjunction with high-performance servers that handle the most complicated parts of the Unobtanium system.") + "\n\n" + _("Thank you to the Bitcoin Electrum team at https://electrum.org for their continued development of Electrum for Bitcoin.") + "\n\n" + _("Unobtanium Electrum has been altered from Bitcoin Electrum by cryptapus. Donation are welcome (UNO): ucrYPTxQPKkb2WTU57PjurHbCHf3rACMJh"))
-=======
             self.pay_to_URI('unobtanium:%s?message=donation for %s'%(d, host))
         else:
             self.show_error(_('No donation address for this server'))
@@ -557,9 +536,8 @@ class ElectrumWindow(QMainWindow, MessageBoxMixin, PrintError):
     def show_about(self):
         QMessageBox.about(self, "Unobtanium Electrum",
             _("Version")+" %s" % (self.wallet.electrum_version) + "\n\n" +
-                _("Electrum's focus is speed, with low resource usage and simplifying Bitcoin. You do not need to perform regular backups, because your wallet can be recovered from a secret phrase that you can memorize or write on paper. Startup times are instant because it operates in conjunction with high-performance servers that handle the most complicated parts of the Bitcoin system."  + "\n\n" +
+                _("Electrum's focus is speed, with low resource usage and simplifying Unobtanium. You do not need to perform regular backups, because your wallet can be recovered from a secret phrase that you can memorize or write on paper. Startup times are instant because it operates in conjunction with high-performance servers that handle the most complicated parts of the Unobtanium system."  + "\n\n" +
                 _("Uses icons from the Icons8 icon pack (icons8.com).")))
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
 
     def show_report_bug(self):
         msg = ' '.join([
@@ -596,15 +574,11 @@ class ElectrumWindow(QMainWindow, MessageBoxMixin, PrintError):
 
     def notify(self, message):
         if self.tray:
-<<<<<<< HEAD
-            self.tray.showMessage("Unobtanium Electrum", message, QSystemTrayIcon.Information, 20000)
-=======
             try:
                 # this requires Qt 5.9
                 self.tray.showMessage("Unobtanium Electrum", message, QIcon(":icons/electrum_dark_icon"), 20000)
             except TypeError:
                 self.tray.showMessage("Electrum", message, QSystemTrayIcon.Information, 20000)
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
 
 
 
@@ -1984,59 +1958,8 @@ class ElectrumWindow(QMainWindow, MessageBoxMixin, PrintError):
         grid.addWidget(line2, 2, 1)
         vbox.addLayout(grid)
         vbox.addLayout(Buttons(CancelButton(d), OkButton(d)))
-<<<<<<< HEAD
-
-        if not d.exec_():
-            return
-
-        if self.set_contact(unicode(line2.text()), str(line1.text())):
-            self.tabs.setCurrentIndex(4)
-
-    def update_new_account_menu(self):
-        self.new_account_menu.setVisible(self.wallet.can_create_accounts())
-        self.new_account_menu.setEnabled(self.wallet.permit_account_naming())
-        self.update_account_selector()
-
-    def new_account_dialog(self):
-        dialog = WindowModalDialog(self, _("New Account Name"))
-        vbox = QVBoxLayout()
-        msg = _("Enter a name to give the account.  You will not be "
-                "permitted to create further accounts until the new account "
-                "receives at least one transaction.") + "\n"
-        label = QLabel(msg)
-        label.setWordWrap(True)
-        vbox.addWidget(label)
-        e = QLineEdit()
-        vbox.addWidget(e)
-        vbox.addLayout(Buttons(CancelButton(dialog), OkButton(dialog)))
-        dialog.setLayout(vbox)
-        if dialog.exec_():
-            self.wallet.set_label(self.wallet.last_account_id(), str(e.text()))
-            self.address_list.update()
-            self.tabs.setCurrentIndex(3)
-            self.update_new_account_menu()
-
-    def check_next_account(self):
-        if self.wallet.needs_next_account() and not self.checking_accounts:
-            self.checking_accounts = True
-            msg = _("All the accounts in your wallet have received "
-                    "transactions.  Unobtanium Electrum must check whether more "
-                    "accounts exist; one will only be shown if "
-                    "it has been used or you give it a name.")
-            self.show_message(msg, title=_("Check Accounts"))
-            self.create_next_account()
-
-    @protected
-    def create_next_account(self, password):
-        def on_done():
-            self.checking_accounts = False
-            self.update_new_account_menu()
-        task = partial(self.wallet.create_next_account, password)
-        self.wallet.thread.add(task, on_done=on_done)
-=======
         if d.exec_():
             self.set_contact(line2.text(), line1.text())
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
 
     def show_master_public_keys(self):
         dialog = WindowModalDialog(self, _("Wallet Information"))
@@ -2292,22 +2215,10 @@ class ElectrumWindow(QMainWindow, MessageBoxMixin, PrintError):
     def tx_from_text(self, txt):
         from electrum.transaction import tx_from_str
         try:
-<<<<<<< HEAD
-            if is_hex:
-                return Transaction(txt)
-            tx_dict = json.loads(str(txt))
-            assert "hex" in tx_dict.keys()
-            tx = Transaction(tx_dict["hex"])
-            return tx
-        except:
-            traceback.print_exc(file=sys.stdout)
-            self.show_critical(_("Unobtanium Electrum was unable to parse your transaction"))
-=======
             tx = tx_from_str(txt)
             return Transaction(tx)
         except BaseException as e:
             self.show_critical(_("Unobtanium Electrum was unable to parse your transaction") + ":\n" + str(e))
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
             return
 
     def read_tx_from_qrcode(self):
@@ -2320,11 +2231,7 @@ class ElectrumWindow(QMainWindow, MessageBoxMixin, PrintError):
         if not data:
             return
         # if the user scanned a bitcoin URI
-<<<<<<< HEAD
-        if data.startswith("unobtanium:"):
-=======
         if str(data).startswith("unobtanium:"):
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
             self.pay_to_URI(data)
             return
         # else if the user scanned an offline signed tx
@@ -2342,12 +2249,8 @@ class ElectrumWindow(QMainWindow, MessageBoxMixin, PrintError):
             with open(fileName, "r") as f:
                 file_content = f.read()
         except (ValueError, IOError, os.error) as reason:
-<<<<<<< HEAD
-            self.show_critical(_("Unobtanium Electrum was unable to open your transaction file") + "\n" + str(reason), title=_("Unable to read file or no transaction found"))
-=======
             self.show_critical(_("Unobtanium Electrum was unable to open your transaction file") + "\n" + str(reason), title=_("Unable to read file or no transaction found"))
             return
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
         return self.tx_from_text(file_content)
 
     def do_process_from_text(self):
@@ -2497,14 +2400,9 @@ class ElectrumWindow(QMainWindow, MessageBoxMixin, PrintError):
                 self.wallet.set_label(key, value)
             self.show_message(_("Your labels were imported from") + " '%s'" % str(labelsFile))
         except (IOError, os.error) as reason:
-<<<<<<< HEAD
-            self.show_critical(_("Unobtanium Electrum was unable to import your labels.") + "\n" + str(reason))
-
-=======
             self.show_critical(_("Unobtanium Electrum was unable to import your labels.") + "\n" + str(reason))
         self.address_list.update()
         self.history_list.update()
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
 
     def do_export_labels(self):
         labels = self.wallet.labels
@@ -2512,17 +2410,10 @@ class ElectrumWindow(QMainWindow, MessageBoxMixin, PrintError):
             fileName = self.getSaveFileName(_("Select file to save your labels"), 'electrum_labels.json', "*.json")
             if fileName:
                 with open(fileName, 'w+') as f:
-<<<<<<< HEAD
-                    json.dump(labels, f)
-                self.show_message(_("Your labels where exported to") + " '%s'" % str(fileName))
-        except (IOError, os.error), reason:
-            self.show_critical(_("Unobtanium Electrum was unable to export your labels.") + "\n" + str(reason))
-=======
                     json.dump(labels, f, indent=4, sort_keys=True)
                 self.show_message(_("Your labels were exported to") + " '%s'" % str(fileName))
         except (IOError, os.error) as reason:
             self.show_critical(_("Unobtanium Electrum was unable to export your labels.") + "\n" + str(reason))
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
 
     def export_history_dialog(self):
         d = WindowModalDialog(self, _('Export History'))
@@ -2544,13 +2435,8 @@ class ElectrumWindow(QMainWindow, MessageBoxMixin, PrintError):
             return
         try:
             self.do_export_history(self.wallet, filename, csv_button.isChecked())
-<<<<<<< HEAD
-        except (IOError, os.error), reason:
-            export_error_label = _("Unobtanium Electrum was unable to produce a transaction export.")
-=======
         except (IOError, os.error) as reason:
             export_error_label = _("Unobtanium Electrum was unable to produce a transaction export.")
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
             self.show_critical(export_error_label + "\n" + str(reason), title=_("Unable to export history"))
             return
         self.show_message(_("Your wallet history has been successfully exported."))
@@ -3083,14 +2969,6 @@ class ElectrumWindow(QMainWindow, MessageBoxMixin, PrintError):
         if self.need_restart:
             self.show_warning(_('Please restart Unobtanium Electrum to activate the new GUI settings'), title=_('Success'))
 
-<<<<<<< HEAD
-    def run_network_dialog(self):
-        if not self.network:
-            self.show_warning(_('You are using Unobtanium Electrum in offline mode; restart Unobtanium Electrum if you want to get connected'), title=_('Offline'))
-            return
-        NetworkDialog(self.wallet.network, self.config, self).do_exec()
-=======
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
 
     def closeEvent(self, event):
         # It seems in some rare cases this closeEvent() is called twice

@@ -15,25 +15,14 @@
 ;General
 
   ;Name and file
-<<<<<<< HEAD
-  Name "Unobtanium Electrum"
-  OutFile "dist/electrum-uno-setup.exe"
-
-  ;Default installation folder
-  InstallDir "$PROGRAMFILES\Electrum-uno"
-
-  ;Get installation folder from registry if available
-  InstallDirRegKey HKCU "Software\Electrum-uno" ""
-=======
   Name "${PRODUCT_NAME}"
-  OutFile "dist/electrum-setup.exe"
+  OutFile "dist/electrum-uno-setup.exe"
 
   ;Default installation folder
   InstallDir "$PROGRAMFILES\${PRODUCT_NAME}"
 
   ;Get installation folder from registry if available
   InstallDirRegKey HKCU "Software\${PRODUCT_NAME}" ""
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
 
   ;Request application privileges for Windows Vista
   RequestExecutionLevel admin
@@ -89,17 +78,6 @@
 ;Pages
 
   !insertmacro MUI_PAGE_DIRECTORY
-<<<<<<< HEAD
-
-  ;Start Menu Folder Page Configuration
-  !define MUI_STARTMENUPAGE_REGISTRY_ROOT "HKCU"
-  !define MUI_STARTMENUPAGE_REGISTRY_KEY "Software\Electrum-uno"
-  !define MUI_STARTMENUPAGE_REGISTRY_VALUENAME "Start Menu Folder"
-
-  ;!insertmacro MUI_PAGE_STARTMENU Application $StartMenuFolder
-
-=======
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
   !insertmacro MUI_PAGE_INSTFILES
   !insertmacro MUI_UNPAGE_CONFIRM
   !insertmacro MUI_UNPAGE_INSTFILES
@@ -126,13 +104,6 @@ FunctionEnd
 Section
   SetOutPath $INSTDIR
 
-<<<<<<< HEAD
-  ;ADD YOUR OWN FILES HERE...
-  file /r dist\electrum-uno\*.*
-
-  ;Store installation folder
-  WriteRegStr HKCU "Software\Electrum-uno" "" $INSTDIR
-=======
   ;Uninstall previous version files
   RMDir /r "$INSTDIR\*.*"
   Delete "$DESKTOP\${PRODUCT_NAME}.lnk"
@@ -144,22 +115,11 @@ Section
 
   ;Store installation folder
   WriteRegStr HKCU "Software\${PRODUCT_NAME}" "" $INSTDIR
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
 
   ;Create uninstaller
   DetailPrint "Creating uninstaller..."
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 
-<<<<<<< HEAD
-
-  CreateShortCut "$DESKTOP\Electrum-uno.lnk" "$INSTDIR\electrum-uno.exe" ""
-
-  ;create start-menu items
-  CreateDirectory "$SMPROGRAMS\Electrum-uno"
-  CreateShortCut "$SMPROGRAMS\Electrum-uno\Uninstall.lnk" "$INSTDIR\Uninstall.exe" "" "$INSTDIR\Uninstall.exe" 0
-  CreateShortCut "$SMPROGRAMS\Electrum-uno\Electrum.lnk" "$INSTDIR\electrum-uno.exe" "" "$INSTDIR\electrum-uno.exe" 0
-
-=======
   ;Create desktop shortcut
   DetailPrint "Creating desktop shortcut..."
   CreateShortCut "$DESKTOP\${PRODUCT_NAME}.lnk" "$INSTDIR\electrum-${PRODUCT_VERSION}.exe" ""
@@ -173,7 +133,7 @@ Section
 
 
   ;Links bitcoin: URI's to Electrum
-  WriteRegStr HKCU "Software\Classes\bitcoin" "" "URL:bitcoin Protocol"
+  WriteRegStr HKCU "Software\Classes\bitcoin" "" "URL:Bitcoin Protocol"
   WriteRegStr HKCU "Software\Classes\bitcoin" "URL Protocol" ""
   WriteRegStr HKCU "Software\Classes\bitcoin" "DefaultIcon" "$\"$INSTDIR\electrum.ico, 0$\""
   WriteRegStr HKCU "Software\Classes\bitcoin\shell\open\command" "" "$\"$INSTDIR\electrum-${PRODUCT_VERSION}.exe$\" $\"%1$\""
@@ -204,14 +164,6 @@ Section "Uninstall"
 
   RMDir "$INSTDIR"
 
-<<<<<<< HEAD
-  Delete "$DESKTOP\Electrum-uno.lnk"
-  Delete "$SMPROGRAMS\Electrum-uno\*.*"
-  RmDir  "$SMPROGRAMS\Electrum-uno"
-
-  DeleteRegKey /ifempty HKCU "Software\Electrum-uno"
-
-=======
   Delete "$DESKTOP\${PRODUCT_NAME}.lnk"
   Delete "$SMPROGRAMS\${PRODUCT_NAME}\*.*"
   RMDir  "$SMPROGRAMS\${PRODUCT_NAME}"
@@ -219,5 +171,4 @@ Section "Uninstall"
   DeleteRegKey HKCU "Software\Classes\bitcoin"
   DeleteRegKey HKCU "Software\${PRODUCT_NAME}"
   DeleteRegKey HKCU "${PRODUCT_UNINST_KEY}"
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
 SectionEnd

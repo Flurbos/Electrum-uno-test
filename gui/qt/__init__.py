@@ -129,12 +129,7 @@ class ElectrumGui:
             submenu.addAction(_("Close"), window.close)
         m.addAction(_("Dark/Light"), self.toggle_tray_icon)
         m.addSeparator()
-<<<<<<< HEAD
         m.addAction(_("Exit Unobtanium Electrum"), self.close)
-        self.tray.setContextMenu(m)
-=======
-        m.addAction(_("Exit Unobtanium Electrum"), self.close)
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
 
     def tray_icon(self):
         if self.dark_icon:

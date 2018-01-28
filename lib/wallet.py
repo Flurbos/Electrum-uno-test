@@ -874,16 +874,11 @@ class Abstract_Wallet(PrintError):
             _type, data, value = o
             if _type == TYPE_ADDRESS:
                 if not is_address(data):
-<<<<<<< HEAD
-                    raise BaseException("Invalid unobtanium address:" + data)
-=======
                     raise BaseException("Invalid unobtanium address:" + data)
             if value == '!':
                 if i_max is not None:
                     raise BaseException("More than one output set to spend max")
                 i_max = i
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
-
         # Avoid index-out-of-range with inputs[0] below
         if not inputs:
             raise NotEnoughFunds()
@@ -1223,16 +1218,11 @@ class Abstract_Wallet(PrintError):
         if not r:
             return
         out = copy.copy(r)
-<<<<<<< HEAD
-        out['URI'] = 'unobtanium:' + addr + '?amount=' + util.format_satoshis(out.get('amount'))
-        out['status'] = self.get_request_status(addr)
-=======
         out['URI'] = 'unobtanium:' + addr + '?amount=' + format_satoshis(out.get('amount'))
         status, conf = self.get_request_status(addr)
         out['status'] = status
         if conf is not None:
             out['confirmations'] = conf
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
         # check if bip70 file exists
         rdir = config.get('requests_dir')
         if rdir:

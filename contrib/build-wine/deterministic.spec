@@ -1,8 +1,5 @@
 # -*- mode: python -*-
 
-<<<<<<< HEAD
-home = 'C:\\electrum-uno\\'
-=======
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 import sys
@@ -15,7 +12,6 @@ else:
 
 
 home = 'C:\\electrum-uno\\'
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
 
 # see https://github.com/pyinstaller/pyinstaller/issues/2005
 hiddenimports = []
@@ -71,30 +67,6 @@ for d in a.datas:
 a.binaries = [x for x in a.binaries if not x[1].lower().startswith(r'c:\windows')]
 
 pyz = PYZ(a.pure)
-<<<<<<< HEAD
-exe = EXE(pyz,
-          a.scripts,
-          a.binaries,
-          a.datas,
-          name=os.path.join('build\\pyi.win32\\electrum-uno', 'electrum-uno.exe'),
-          debug=False,
-          strip=None,
-          upx=False,
-          icon=home+'icons/electrum.ico',
-          console=False)
-          # The console True makes an annoying black box pop up, but it does make Electrum output command line commands, with this turned off no output will be given but commands can still be used
-
-coll = COLLECT(exe,
-               a.binaries,
-               a.zipfiles,
-               a.datas,
-               strip=None,
-               upx=True,
-               debug=False,
-               icon=home+'icons/electrum.ico',
-               console=False,
-               name=os.path.join('dist', 'electrum-uno'))
-=======
 
 
 #####
@@ -150,4 +122,3 @@ coll = COLLECT(
     icon=home+'icons/electrum.ico',
     console=False,
     name=os.path.join('dist', 'electrum-uno'))
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a

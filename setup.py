@@ -12,7 +12,7 @@ import argparse
 version = imp.load_source('version', 'lib/version.py')
 
 if sys.version_info[:3] < (3, 4, 0):
-    sys.exit("Error: Electrum requires Python version >= 3.4.0...")
+    sys.exit("Error: Unobtanium Electrum requires Python version >= 3.4.0...")
 
 data_files = []
 
@@ -83,7 +83,7 @@ setup(
     },
     scripts=['electrum'],
     data_files=data_files,
-    description="Lightweight Bitcoin Wallet",
+    description="Lightweight Unobtanium Wallet",
     author="Thomas Voegtlin",
     author_email="thomasv@electrum.org",
     license="MIT Licence",

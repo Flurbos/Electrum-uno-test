@@ -4,7 +4,7 @@
 # copy this file to /etc/electrum.conf if you want read-only settings
 
 [client]
-server = cryptap.us:50005:t
+server = electrum1.unobtanium.uno:50005:t
 proxy = None
 gap_limit = 5
 # booleans use python syntax

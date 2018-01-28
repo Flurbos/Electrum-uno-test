@@ -349,13 +349,7 @@ def parse_scriptSig(d, _bytes):
     d['x_pubkeys'] = x_pubkeys
     d['pubkeys'] = pubkeys
     d['redeemScript'] = redeemScript
-<<<<<<< HEAD
-    d['address'] = hash_160_to_bc_address(hash_160(redeemScript.decode('hex')), 30)
-
-=======
     d['address'] = hash160_to_p2sh(hash_160(bfh(redeemScript)))
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
-
 
 def parse_redeemScript(s):
     dec2 = [ x for x in script_GetOp(s) ]
@@ -390,14 +384,7 @@ def get_address_from_output_script(_bytes):
     # p2sh
     match = [ opcodes.OP_HASH160, opcodes.OP_PUSHDATA4, opcodes.OP_EQUAL ]
     if match_decoded(decoded, match):
-<<<<<<< HEAD
-        return TYPE_ADDRESS, hash_160_to_bc_address(decoded[1][1],30)
-
-    return TYPE_SCRIPT, bytes
-
-=======
         return TYPE_ADDRESS, hash160_to_p2sh(decoded[1][1])
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
 
     # segwit address
     match = [ opcodes.OP_0, opcodes.OP_PUSHDATA4 ]
@@ -651,21 +638,6 @@ class Transaction:
             return 0x21  # just guess it is compressed
 
     @classmethod
-<<<<<<< HEAD
-    def pay_script(self, output_type, addr):
-        if output_type == TYPE_SCRIPT:
-            return addr.encode('hex')
-        elif output_type == TYPE_ADDRESS:
-            addrtype, hash_160 = bc_address_to_hash_160(addr)
-            if addrtype == 130:
-                script = '76a9'                                      # op_dup, op_hash_160
-                script += push_script(hash_160.encode('hex'))
-                script += '88ac'                                     # op_equalverify, op_checksig
-            elif addrtype == 30:
-                script = 'a9'                                        # op_hash_160
-                script += push_script(hash_160.encode('hex'))
-                script += '87'                                       # op_equal
-=======
     def get_siglist(self, txin, estimate_size=False):
         # if we have enough signatures, we use the actual pubkeys
         # otherwise, use extended pubkeys (with bip32 derivation)
@@ -683,7 +655,6 @@ class Transaction:
             if is_complete:
                 pk_list = pubkeys
                 sig_list = signatures
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
             else:
                 pk_list = x_pubkeys
                 sig_list = [sig if sig else NO_SIGNATURE for sig in x_signatures]

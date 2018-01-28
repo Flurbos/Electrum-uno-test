@@ -1,6 +1,10 @@
 ####-*.patch
 *.pyc
 *.swp
+*.exe
+*.zip
+*.tar.gz
+*.Egg
 build/
 dist/
 *.egg/

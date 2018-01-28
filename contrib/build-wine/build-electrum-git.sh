@@ -1,15 +1,7 @@
 #!/bin/bash
 
-<<<<<<< HEAD
-# You probably need to update only this link
-ELECTRUM_GIT_URL=git://github.com/cryptapus/electrum-uno.git
-BRANCH=master
-NAME_ROOT=electrum-uno
-
-=======
 NAME_ROOT=electrum-uno
 PYTHON_VERSION=3.5.4
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
 
 # These settings probably don't need any change
 export WINEPREFIX=/opt/wine64
@@ -33,7 +25,7 @@ for repo in electrum electrum-locale electrum-icons; do
 	git checkout master
 	cd ..
     else
-	URL=https://github.com/spesmilo/$repo.git
+	URL=https://github.com/flurbos/$repo.git
 	git clone -b master $URL $repo
     fi
 done
@@ -51,31 +43,11 @@ if [ ! -z "$1" ]; then
     git checkout $1
 fi
 
-<<<<<<< HEAD
-cd electrum-git
-VERSION=`git rev-parse HEAD | awk '{ print substr($1, 0, 11) }'`
-=======
 VERSION=`git describe --tags`
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
 echo "Last commit: $VERSION"
 find -exec touch -d '2000-11-11T11:11:11+00:00' {} +
 popd
 
-<<<<<<< HEAD
-rm -rf $WINEPREFIX/drive_c/electrum-uno
-cp -r electrum-git $WINEPREFIX/drive_c/electrum-uno
-cp electrum-git/LICENCE .
-
-# add python packages (built with make_packages)
-cp -r ../../../packages $WINEPREFIX/drive_c/electrum-uno/
-
-# add locale dir
-cp -r ../../../lib/locale $WINEPREFIX/drive_c/electrum-uno/lib/
-
-# Build Qt resources
-wine $WINEPREFIX/drive_c/Python27/Lib/site-packages/PyQt4/pyrcc4.exe C:/electrum-uno/icons.qrc -o C:/electrum-uno/lib/icons_rc.py
-wine $WINEPREFIX/drive_c/Python27/Lib/site-packages/PyQt4/pyrcc4.exe C:/electrum-uno/icons.qrc -o C:/electrum-uno/gui/qt/icons_rc.py
-=======
 rm -rf $WINEPREFIX/drive_c/electrum-uno
 cp -r electrum $WINEPREFIX/drive_c/electrum-uno
 cp electrum/LICENCE .
@@ -88,7 +60,6 @@ $PYTHON -m pip install -r ../../requirements.txt
 pushd $WINEPREFIX/drive_c/electrum-uno
 $PYTHON setup.py install
 popd
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
 
 cd ..
 
@@ -107,24 +78,7 @@ popd
 wine "$WINEPREFIX/drive_c/Program Files (x86)/NSIS/makensis.exe" /DPRODUCT_VERSION=$VERSION electrum.nsi
 
 cd dist
-<<<<<<< HEAD
-mv electrum-uno.exe $NAME_ROOT-$VERSION.exe
-mv electrum-uno-setup.exe $NAME_ROOT-$VERSION-setup.exe
-mv electrum-uno $NAME_ROOT-$VERSION
-zip -r $NAME_ROOT-$VERSION.zip $NAME_ROOT-$VERSION
-cd ..
-
-# build portable version
-cp portable.patch $WINEPREFIX/drive_c/electrum-uno
-pushd $WINEPREFIX/drive_c/electrum-uno
-patch < portable.patch 
-popd
-$PYTHON "C:/pyinstaller/pyinstaller.py" --noconfirm --ascii -w deterministic.spec
-cd dist
-mv electrum-uno.exe $NAME_ROOT-$VERSION-portable.exe
-=======
 mv electrum-setup.exe $NAME_ROOT-$VERSION-setup.exe
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
 cd ..
 
 echo "Done."

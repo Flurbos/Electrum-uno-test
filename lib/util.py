@@ -324,32 +324,14 @@ def bh2u(x):
 
 
 def user_dir():
-<<<<<<< HEAD
-    if "HOME" in os.environ:
-        return os.path.join(os.environ["HOME"], ".electrum_uno")
-=======
     if 'ANDROID_DATA' in os.environ:
         return android_check_data_dir()
     elif os.name == 'posix':
         return os.path.join(os.environ["HOME"], ".electrum_uno")
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
     elif "APPDATA" in os.environ:
         return os.path.join(os.environ["APPDATA"], "Electrum_uno")
     elif "LOCALAPPDATA" in os.environ:
-<<<<<<< HEAD
         return os.path.join(os.environ["LOCALAPPDATA"], "Electrum_uno")
-    elif 'ANDROID_DATA' in os.environ:
-        try:
-            import jnius
-            env  = jnius.autoclass('android.os.Environment')
-            _dir =  env.getExternalStorageDirectory().getPath()
-            return _dir + '/electrum_uno/'
-        except ImportError:
-            pass
-        return "/sdcard/electrum_uno/"
-=======
-        return os.path.join(os.environ["LOCALAPPDATA"], "Electrum_uno")
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
     else:
         #raise Exception("No home directory found in environment variables.")
         return
@@ -448,17 +430,10 @@ def time_difference(distance_in_time, include_seconds):
     else:
         return "over %d years" % (round(distance_in_minutes / 525600))
 
-<<<<<<< HEAD
-block_explorer_info = {
-    'Insight - cryptap.us': ('http://insight-uno.cryptap.us',
-                        {'tx': 'tx', 'addr': 'address'}),
-    'Abe - cryptap.us': ('https://cryptap.us/uno/explorer',
-                        {'tx': 'tx', 'address': 'address'}),
-=======
 mainnet_block_explorers = {
-    'Biteasy.com': ('http//insight-uno.cryptap.us',
+    'Unobtanium.uno': ('http//explorer.unobtanium.uno',
                         {'tx': 'transactions', 'addr': 'addresses'}),
-    'Bitflyer.jp': ('https://chainflyer.bitflyer.jp',
+    'Flurbo.xyz': ('https://explorer.flurbo.xyz',
                         {'tx': 'Transaction', 'addr': 'Address'}),
     'Blockchain.info': ('https://blockchain.info',
                         {'tx': 'tx', 'addr': 'address'}),
@@ -482,7 +457,6 @@ mainnet_block_explorers = {
                         {'tx': 'transaction', 'addr': 'address'}),
     'system default': ('blockchain:',
                         {'tx': 'tx', 'addr': 'address'}),
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
 }
 
 testnet_block_explorers = {
@@ -497,11 +471,7 @@ def block_explorer_info():
     return testnet_block_explorers if bitcoin.NetworkConstants.TESTNET else mainnet_block_explorers
 
 def block_explorer(config):
-<<<<<<< HEAD
-    return config.get('block_explorer', 'Insight - cryptap.us')
-=======
-    return config.get('block_explorer', 'Blocktrail.com')
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
+    return config.get('block_explorer', 'Unobtanium.uno')
 
 def block_explorer_tuple(config):
     return block_explorer_info().get(block_explorer(config))
@@ -526,18 +496,12 @@ def parse_URI(uri, on_pr=None):
 
     if ':' not in uri:
         if not bitcoin.is_address(uri):
-            raise BaseException("Not a bitcoin address")
+            raise BaseException("Not a unobtanium address")
         return {'address': uri}
 
-<<<<<<< HEAD
-    u = urlparse.urlparse(uri)
-    if u.scheme != 'unobtanium':
-        raise BaseException("Not a unobtanium URI")
-=======
     u = urllib.parse.urlparse(uri)
     if u.scheme != 'unobtanium':
-        raise BaseException("Not a bitcoin URI")
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
+        raise BaseException("Not a unobtanium URI")
     address = u.path
 
     # python for android fails to parse query
@@ -603,17 +567,9 @@ def create_URI(addr, amount, message):
     if amount:
         query.append('amount=%s'%format_satoshis_plain(amount))
     if message:
-<<<<<<< HEAD
-        if type(message) == unicode:
-            message = message.encode('utf8')
-        query.append('message=%s'%urllib.quote(message))
-    p = urlparse.ParseResult(scheme='unobtanium', netloc='', path=addr, params='', query='&'.join(query), fragment='')
-    return urlparse.urlunparse(p)
-=======
         query.append('message=%s'%urllib.parse.quote(message))
     p = urllib.parse.ParseResult(scheme='unobtanium', netloc='', path=addr, params='', query='&'.join(query), fragment='')
     return urllib.parse.urlunparse(p)
->>>>>>> 743ef9ec8f1e69c56f587359f00de19f4f05ff0a
 
 
 # Python bug (http://bugs.python.org/issue1927) causes raw_input
